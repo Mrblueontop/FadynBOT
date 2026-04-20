@@ -1,3 +1,6 @@
+import asyncio
+import random
+import sys
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -98,4 +101,30 @@ async def updatelogs(interaction: discord.Interaction):
     )
 
 
-bot.run(TOKEN)
+MAX_RETRIES     = 10
+BASE_DELAY      = 5    # seconds
+MAX_DELAY       = 300  # seconds (5 minutes)
+
+for attempt in range(1, MAX_RETRIES + 1):
+    try:
+        bot.run(TOKEN)
+        break  # clean exit — no retry needed
+    except discord.errors.HTTPException as e:
+        if e.status == 429:
+            delay = min(BASE_DELAY * (2 ** (attempt - 1)), MAX_DELAY)
+            jitter = random.uniform(0, delay * 0.1)
+            wait = delay + jitter
+            print(
+                f"⚠️  Rate limited by Discord (429) on attempt {attempt}/{MAX_RETRIES}. "
+                f"Retrying in {wait:.1f}s..."
+            )
+            if attempt == MAX_RETRIES:
+                print("❌ Max retries reached. Exiting.")
+                sys.exit(1)
+            asyncio.get_event_loop().run_until_complete(asyncio.sleep(wait))
+        else:
+            print(f"❌ HTTP error {e.status}: {e}. Not retrying.")
+            sys.exit(1)
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}. Not retrying.")
+        sys.exit(1)
