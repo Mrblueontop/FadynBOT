@@ -94,7 +94,9 @@ COMMISSION_QUESTIONS: List[Question] = [
             "What shape/style would you like your buttons to have?\n\n"
             "• **Rounded** — smooth, pill-like corners, modern feel\n"
             "• **Square** — sharp corners, clean and minimal\n"
-            "• **Custom** — you'll describe exactly what you want"
+            "• **Custom** — describe your own style: shape, edges, borders, shadow, "
+            "thickness, or any specific effects you want\n\n"
+            "Pick one of the presets, or select **Custom** and type your description below."
         ),
         kind="choice",
         options=[
@@ -102,17 +104,6 @@ COMMISSION_QUESTIONS: List[Question] = [
             ChoiceOption("Square",     "Square"),
             ChoiceOption("Custom 🖊️", "Custom"),
         ],
-        show_if=_is_buttons,
-    ),
-    Question(
-        id="button_style_custom",
-        prompt=(
-            "Describe the button style you have in mind.\n\n"
-            "Think about shape, edges, borders, shadow, thickness, or any "
-            "specific effects you want. The more detail the better!"
-        ),
-        kind="text",
-        show_if=lambda a: _is_buttons(a) and a.get("button_style") == "Custom",
     ),
     Question(
         id="button_hover",
@@ -194,72 +185,17 @@ COMMISSION_QUESTIONS: List[Question] = [
         kind="text",
         show_if=lambda a: _is_frames(a) and a.get("frame_style") == "Custom",
     ),
-    Question(
-        id="frame_layout",
-        prompt=(
-            "How should the frames be laid out on screen?\n\n"
-            "• **Single panel** — one focused window or overlay\n"
-            "• **Multi-panel** — multiple sections or screens side by side\n"
-            "• **Tabbed / split** — content split into tabs or columns\n"
-            "• **Custom** — you'll describe the layout yourself"
-        ),
-        kind="choice",
-        options=[
-            ChoiceOption("Single panel",   "Single"),
-            ChoiceOption("Multi-panel",    "Multi"),
-            ChoiceOption("Tabbed / split", "Tabbed"),
-            ChoiceOption("Custom 🖊️",     "Custom"),
-        ],
-        show_if=_is_frames,
-    ),
-    Question(
-        id="frame_layout_custom",
-        prompt=(
-            "Describe the layout you have in mind.\n\n"
-            "Mention things like number of panels, scrollable sections, sidebars, headers, "
-            "footers, or how the content should be arranged on screen."
-        ),
-        kind="text",
-        show_if=lambda a: _is_frames(a) and a.get("frame_layout") == "Custom",
-    ),
-    Question(
-        id="frame_background",
-        prompt=(
-            "What should the background inside the frames look like?\n\n"
-            "• **Solid** — fully opaque, no see-through\n"
-            "• **Semi-transparent** — slightly see-through, layered look\n"
-            "• **Fully transparent** — completely see-through frame body\n"
-            "• **Custom** — describe exactly what you want"
-        ),
-        kind="choice",
-        options=[
-            ChoiceOption("Solid",             "Solid"),
-            ChoiceOption("Semi-transparent",  "Semi"),
-            ChoiceOption("Fully transparent", "Transparent"),
-            ChoiceOption("Custom 🖊️",         "Custom"),
-        ],
-        show_if=_is_frames,
-    ),
-    Question(
-        id="frame_background_custom",
-        prompt=(
-            "Describe the background style you want inside the frames.\n\n"
-            "For example: a specific color, gradient, pattern, texture, blurred background image, etc."
-        ),
-        kind="text",
-        show_if=lambda a: _is_frames(a) and a.get("frame_background") == "Custom",
-    ),
-
     # ── Shared: elements + design ─────────────────────────────────────────────
     Question(
         id="elements",
         prompt=(
-            "Which UI elements or screens do you need designed?\n\n"
+            "What type of UI frame do you need?\n\n"
             "Select all that apply — I'll make sure each one is covered in the final delivery."
         ),
         kind="dropdown",
         min_values=1,
         max_values=7,
+        show_if=lambda a: a.get("ui_type") != "Buttons UI",
         options=[
             DropdownOption("Main Menu",                 "Main Menu",      "Title screen / main hub"),
             DropdownOption("HUD (health, ammo, etc.)", "HUD",            "In-game heads-up display"),
@@ -298,11 +234,15 @@ COMMISSION_QUESTIONS: List[Question] = [
     Question(
         id="color_scheme",
         prompt=(
-            "What colors should be used throughout the UI?\n\n"
-            "Share your primary colors, accent colors, and any colors to avoid. "
-            "Also mention fonts, logos, or existing branding if relevant — or just say **none** if you have no preference."
+            "List 2–4 colors for your UI using HEX codes or clear color names.\n\n"
+            "**Format:** primary color, accent color, background color (+ any to avoid)\n"
+            "**Example:** `#1A1A2E` (dark navy), `#E94560` (red accent), avoid green\n\n"
+            "Also mention any fonts or existing branding if relevant.\n"
+            "*(No preference? Reply **skip** to leave this open.)*"
         ),
         kind="text",
+        min_length=7,
+        optional=True,
     ),
     Question(
         id="reference",
@@ -334,32 +274,6 @@ COMMISSION_QUESTIONS: List[Question] = [
             DropdownOption("💵 Cash App", "Cash App", "USD via Cash App"),
             DropdownOption("🎮 Robux",    "Robux",    "Roblox currency"),
             DropdownOption("❓ Other",    "Other",    "Something else"),
-        ],
-    ),
-    Question(
-        id="budget",
-        prompt=(
-            "Which pricing tier fits your commission?\n\n"
-            "Each tier reflects the complexity and scope of work involved. "
-            "Choose the one that best matches what you're looking for."
-        ),
-        kind="dropdown",
-        options=[
-            DropdownOption(
-                "🟢 Basic UI",
-                "Basic",
-                "$2–$5 USD | 200–500 R$ — Simple layouts / HUDs",
-            ),
-            DropdownOption(
-                "🟡 Standard UI",
-                "Standard",
-                "$5–$10 USD | 500–2,000 R$ — Menus / shop / inventory",
-            ),
-            DropdownOption(
-                "🔴 Advanced UI",
-                "Advanced",
-                "$10–$25 USD | 2,000–5,000 R$ — Full systems / detailed UI",
-            ),
         ],
     ),
     Question(
