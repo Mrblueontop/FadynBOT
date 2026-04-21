@@ -8,6 +8,7 @@ from typing import Optional
 from questions import COMMISSION_QUESTIONS, get_next_question, resolve_label, Question
 from roblox import get_user_by_username, is_in_group, get_user_bio, get_user_headshot, generate_code
 from storage import get_verified, set_verified
+from ai import format_price_footer
 
 BRAND_COLOR   = 0x7B2FFF
 ACCENT_COLOR  = 0x00F5FF
@@ -613,11 +614,15 @@ class CommissionFlow:
             await self._ask(user, q, session)
 
     async def _ask(self, user, q: Question, session: dict):
+        price_footer = format_price_footer(session["_answers"])
+        footer_text  = f"Fadyn Bot • Roblox UI Commissions{('  ·  ' + price_footer) if price_footer else ''}"
+
         if q.kind == "text":
             suffix = "\n\n> 💬 **Reply to this message** with your answer."
             if q.optional:
                 suffix += "\n> *(Optional — you may skip)*"
             embed = make_embed(f"❓ {q.prompt[:100]}", q.prompt + suffix)
+            embed.set_footer(text=footer_text)
             view  = SkipButtonView(q.id) if q.optional else None
             dm    = await user.create_dm()
             msg   = await dm.send(embed=embed, view=view)
@@ -625,10 +630,12 @@ class CommissionFlow:
             session["_awaiting_msg_id"] = msg.id
         elif q.kind == "choice":
             embed = make_embed(f"❓ {q.prompt[:100]}", q.prompt)
+            embed.set_footer(text=footer_text)
             dm    = await user.create_dm()
             await dm.send(embed=embed, view=ChoiceView(q))
         elif q.kind == "dropdown":
             embed = make_embed(f"❓ {q.prompt[:100]}", q.prompt)
+            embed.set_footer(text=footer_text)
             dm    = await user.create_dm()
             await dm.send(embed=embed, view=DropdownView(q))
 
@@ -795,24 +802,18 @@ class CommissionFlow:
         "project_description":     "📄 Project Description",
         "ui_type":                 "🧩 UI Type",
         "button_style":            "🔘 Button Style",
-        "button_style_custom":     "🔘 Custom Button Style",
         "button_hover":            "✨ Button Animations",
         "button_hover_custom":     "✨ Custom Animation",
         "button_icons":            "🔣 Button Icons",
         "button_icons_custom":     "🔣 Icon Details",
         "frame_style":             "🖼️ Frame Style",
         "frame_style_custom":      "🖼️ Custom Frame Style",
-        "frame_layout":            "📐 Frame Layout",
-        "frame_layout_custom":     "📐 Custom Layout",
-        "frame_background":        "🌫️ Frame Background",
-        "frame_background_custom": "🌫️ Custom Background",
         "elements":                "🧩 UI Elements Needed",
         "design_style":            "🎨 Design Style",
         "design_style_custom":     "🎨 Custom Design Style",
         "color_scheme":            "🖌️ Colors & Fonts",
         "reference":               "📎 Reference",
         "payment_method":          "💳 Payment Method",
-        "budget":                  "💰 Budget Tier",
         "extra_info":              "📝 Additional Notes",
     }
 
