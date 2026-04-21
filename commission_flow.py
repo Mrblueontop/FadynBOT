@@ -615,9 +615,12 @@ class CommissionFlow:
             await self._ask(user, q, session)
 
     async def _ask(self, user, q: Question, session: dict):
-        price_footer = await format_price_footer(session["_answers"])
+        try:
+            price_footer = await format_price_footer(session["_answers"])
+        except Exception:
+            price_footer = ""
         footer_text  = f"Fadyn Bot • Roblox UI Commissions{('  ·  ' + price_footer) if price_footer else ''}"
-        first_line   = q.prompt.split("\n")[0]
+        first_line   = q.prompt.split(chr(10))[0]
         title        = f"❓ {first_line[:100]}"
         body         = q.prompt[len(first_line):].lstrip("\n")
 
