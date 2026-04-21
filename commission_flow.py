@@ -27,7 +27,7 @@ def make_embed(title: str, description: str, color: int = BRAND_COLOR) -> discor
 
 
 def answered_embed(q: Question, answer: str) -> discord.Embed:
-    embed = discord.Embed(title=f"✅ {q.prompt[:100]}", color=BRAND_COLOR)
+    embed = discord.Embed(title=f"✅ {q.prompt.split(chr(10))[0][:100]}", color=BRAND_COLOR)
     embed.add_field(name="Your Answer", value=f"```{answer[:1000]}```", inline=False)
     embed.set_footer(text="Fadyn Bot • Click ✏️ Edit to change this answer")
     return embed
@@ -402,6 +402,7 @@ class CommissionFlow:
         session["_verify_step"]     = "confirm"
 
         headshot = await get_user_headshot(user_data["id"])
+        session["_roblox_headshot"] = headshot
         embed = discord.Embed(
             title="Is this you?",
             description=(
@@ -614,14 +615,17 @@ class CommissionFlow:
             await self._ask(user, q, session)
 
     async def _ask(self, user, q: Question, session: dict):
-        price_footer = format_price_footer(session["_answers"])
+        price_footer = await format_price_footer(session["_answers"])
         footer_text  = f"Fadyn Bot • Roblox UI Commissions{('  ·  ' + price_footer) if price_footer else ''}"
+        first_line   = q.prompt.split("\n")[0]
+        title        = f"❓ {first_line[:100]}"
+        body         = q.prompt[len(first_line):].lstrip("\n")
 
         if q.kind == "text":
             suffix = "\n\n> 💬 **Reply to this message** with your answer."
             if q.optional:
                 suffix += "\n> *(Optional — you may skip)*"
-            embed = make_embed(f"❓ {q.prompt[:100]}", q.prompt + suffix)
+            embed = make_embed(title, body + suffix)
             embed.set_footer(text=footer_text)
             view  = SkipButtonView(q.id) if q.optional else None
             dm    = await user.create_dm()
@@ -629,12 +633,12 @@ class CommissionFlow:
             session["_awaiting_text"]   = q.id
             session["_awaiting_msg_id"] = msg.id
         elif q.kind == "choice":
-            embed = make_embed(f"❓ {q.prompt[:100]}", q.prompt)
+            embed = make_embed(title, body)
             embed.set_footer(text=footer_text)
             dm    = await user.create_dm()
             await dm.send(embed=embed, view=ChoiceView(q))
         elif q.kind == "dropdown":
-            embed = make_embed(f"❓ {q.prompt[:100]}", q.prompt)
+            embed = make_embed(title, body)
             embed.set_footer(text=footer_text)
             dm    = await user.create_dm()
             await dm.send(embed=embed, view=DropdownView(q))
@@ -835,32 +839,47 @@ class CommissionFlow:
         session = self.sessions.get(user.id)
         if not session:
             return
-        answers = session["_answers"]
-
-        qa_block = self._build_qa_block(answers)
-
-        roblox = session.get("_roblox_username")
-        footer_parts = [f"🎮 Roblox: **{roblox}**" if roblox else ""]
-        footer_parts = [p for p in footer_parts if p]
-
-        description = (
-            "Here's everything I've collected. Look it over — if anything needs changing, "
-            "hit **Edit an Answer** before confirming.\n"
-            f"\n{qa_block}"
-        )
-        if footer_parts:
-            description += "\n\n" + "  •  ".join(footer_parts)
+        answers      = session["_answers"]
+        roblox       = session.get("_roblox_username", "—")
+        headshot     = session.get("_roblox_headshot")
+        now          = int(datetime.utcnow().timestamp())
+        price_footer = await format_price_footer(answers)
 
         embed = discord.Embed(
             title="📋 Order Summary — Please Confirm",
-            description=description[:4096],
+            description="Here's everything I've collected. Look it over — if anything needs changing, hit **Edit an Answer** before confirming.",
             color=SUCCESS_COLOR,
+            timestamp=datetime.utcnow(),
         )
+
+        if headshot:
+            embed.set_author(name=roblox, icon_url=headshot)
+            embed.set_thumbnail(url=headshot)
+
+        for q in COMMISSION_QUESTIONS:
+            if q.show_if and not q.show_if(answers):
+                continue
+            raw = answers.get(q.id, "")
+            if not raw:
+                continue
+            first_line = q.prompt.split(chr(10))[0]
+            if q.kind in ("choice", "dropdown"):
+                parts   = raw.split(", ")
+                display = ", ".join(resolve_label(q, v) for v in parts)
+            else:
+                display = raw
+            embed.add_field(name=first_line[:256], value=display[:1024], inline=False)
+
+        embed.add_field(name="🎮 Roblox Account", value=roblox,         inline=True)
+        embed.add_field(name="📅 Submitted",      value=f"<t:{now}:F>", inline=True)
+        if price_footer:
+            embed.add_field(name="💰 Price Estimate", value=price_footer, inline=False)
+
         embed.set_footer(text="Fadyn Bot • Roblox UI Commissions")
         dm = await user.create_dm()
         await dm.send(embed=embed, view=FinalConfirmView())
 
-    # ─── LOGGING ──────────────────────────────────────────────────────────────
+        # ─── LOGGING ──────────────────────────────────────────────────────────────
 
     async def _log_order(self, user, session: dict, order_id: str):
         if not self.log_channel_id:
@@ -869,28 +888,43 @@ class CommissionFlow:
         if not channel:
             return
 
-        answers  = session["_answers"]
-        roblox   = session.get("_roblox_username", "—")
-        started  = session.get("_started_at", "unknown")
-
-        qa_block = self._build_qa_block(answers)
-
-        description = (
-            f"{qa_block}\n\n"
-            f"─────────────────────────\n"
-            f"**User**\n{user.mention} (`{user.id}`)\n\n"
-            f"**Roblox Account**\n{roblox}\n\n"
-            f"**Submitted**\n{started}"
-        )
+        answers      = session["_answers"]
+        roblox       = session.get("_roblox_username", "—")
+        headshot     = session.get("_roblox_headshot")
+        now          = int(datetime.utcnow().timestamp())
+        price_footer = await format_price_footer(answers)
 
         embed = discord.Embed(
             title=f"📝 New Commission Order — {order_id}",
-            description=description[:4096],
             color=BRAND_COLOR,
             timestamp=datetime.utcnow(),
         )
-        embed.set_author(name=str(user), icon_url=user.display_avatar.url)
-        embed.set_footer(text="Fadyn Bot • Roblox UI Commissions")
+
+        if headshot:
+            embed.set_author(name=roblox, icon_url=headshot)
+            embed.set_thumbnail(url=headshot)
+
+        for q in COMMISSION_QUESTIONS:
+            if q.show_if and not q.show_if(answers):
+                continue
+            raw = answers.get(q.id, "")
+            if not raw:
+                continue
+            first_line = q.prompt.split(chr(10))[0]
+            if q.kind in ("choice", "dropdown"):
+                parts   = raw.split(", ")
+                display = ", ".join(resolve_label(q, v) for v in parts)
+            else:
+                display = raw
+            embed.add_field(name=first_line[:256], value=display[:1024], inline=False)
+
+        embed.add_field(name="👤 Discord",        value=f"{user.mention} (`{user.id}`)", inline=True)
+        embed.add_field(name="🎮 Roblox Account", value=roblox,                          inline=True)
+        embed.add_field(name="📅 Submitted",      value=f"<t:{now}:F>",                  inline=True)
+        if price_footer:
+            embed.add_field(name="💰 Price Estimate", value=price_footer, inline=False)
+
+        embed.set_footer(text=f"Fadyn Bot • {order_id}")
 
         await channel.send(embed=embed)
 
@@ -901,7 +935,7 @@ class CommissionFlow:
             except Exception:
                 pass
 
-    # ─── LOG MIGRATION ────────────────────────────────────────────────────────
+        # ─── LOG MIGRATION ────────────────────────────────────────────────────────
 
     async def rebuild_log_embeds(self, channel) -> tuple[int, int]:
         """
@@ -988,6 +1022,39 @@ class CommissionFlow:
                 skipped += 1
 
         return updated, skipped
+
+
+    # ─── /UPDATELOGS COMMAND ──────────────────────────────────────────────────
+
+    async def handle_updatelogs(self, interaction: discord.Interaction):
+        """
+        /updatelogs — Re-renders all commission log embeds in the log channel
+        to the latest embed format. Only usable by admins.
+        """
+        if not interaction.guild or not interaction.user:
+            await interaction.response.send_message("Must be used in a server.", ephemeral=True)
+            return
+
+        member = interaction.guild.get_member(interaction.user.id)
+        if not member or not member.guild_permissions.manage_guild:
+            await interaction.response.send_message("You need **Manage Server** permission.", ephemeral=True)
+            return
+
+        if not self.log_channel_id:
+            await interaction.response.send_message("No log channel configured.", ephemeral=True)
+            return
+
+        channel = self.bot.get_channel(self.log_channel_id)
+        if not channel:
+            await interaction.response.send_message("Log channel not found.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        updated, skipped = await self.rebuild_log_embeds(channel)
+        await interaction.followup.send(
+            f"✅ Done — updated **{updated}** embed(s), skipped **{skipped}**.",
+            ephemeral=True,
+        )
 
     # ─── HELPERS ──────────────────────────────────────────────────────────────
 
