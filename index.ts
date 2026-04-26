@@ -20,7 +20,7 @@ import { handleButton } from "./button.js";
 import { handleMessage } from "./message.js";
 import { handleModal } from "./modal.js";
 import { handleSelectMenu } from "./selectMenu.js";
-import { getSession, clearSession, getAllApplications, updateSession } from "./applicationSession.js";
+import { getSession, clearSession, getAllApplications, updateSession, loadSessionsFromWorker } from "./applicationSession.js";
 import { buildApplicationEmbed } from "./applicationEmbed.js";
 import { trackRecruitmentMessage, getTrackedMessages, untrackRecruitmentMessage } from "./recruitmentTracker.js";
 import { getQuestionsForRoles } from "./questions.js";
@@ -328,6 +328,9 @@ client.once(Events.ClientReady, async (c) => {
   if (clientId) {
     await registerCommands(token!, clientId, process.env.DISCORD_GUILD_ID);
   }
+
+  // ── Restore sessions from Worker KV ──────────────────────────────────────
+  await loadSessionsFromWorker();
 
   // ── Resume in-progress applications after restart ─────────────────────────
   const RESTART_TIMEOUT_MS = 30 * 60 * 1000;
