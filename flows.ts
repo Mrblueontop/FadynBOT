@@ -75,15 +75,46 @@ export function buildApplicationCancelledEmbed(): EmbedBuilder {
 }
 
 export function buildAnsweredEmbed(question: Question, answer: string, index: number, total: number): EmbedBuilder {
+  const displayAnswer = answer.length > 900 ? answer.slice(0, 897) + "…" : answer;
   return new EmbedBuilder()
-    .setDescription(`✅ **${index + 1}/${total}. ${question.prompt}**\n\n**Answer:** ${answer}`)
-    .setColor(0x2ecc71);
+    .setTitle(`✅ Question ${index + 1} of ${total} — Answered`)
+    .setDescription(
+      [
+        question.prompt,
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        `📌 **Your Answer:**`,
+        `> ${displayAnswer.replace(/\n/g, "\n> ")}`,
+      ].join("\n")
+    )
+    .setColor(0x2ecc71)
+    .setFooter({ text: "Click Edit Answer if you'd like to change this" });
 }
 
 export function buildEditButtonRow(questionId: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(`edit_q:${questionId}`).setLabel("Edit").setStyle(ButtonStyle.Secondary).setEmoji("✏️")
+    new ButtonBuilder().setCustomId(`edit_q:${questionId}`).setLabel("Edit Answer").setStyle(ButtonStyle.Secondary).setEmoji("✏️")
   );
+}
+
+// Edit the original question message in-place to show answered state
+export async function updateQuestionToAnswered(
+  channel: DMChannel,
+  messageId: string,
+  question: Question,
+  answer: string,
+  index: number,
+  total: number
+): Promise<void> {
+  try {
+    const msg = await channel.messages.fetch(messageId);
+    await msg.edit({
+      embeds: [buildAnsweredEmbed(question, answer, index, total)],
+      components: [buildEditButtonRow(question.id)],
+    });
+  } catch {
+    // If message can't be edited (too old / deleted), silently skip
+  }
 }
 
 export function buildApplicationSentEmbed(): EmbedBuilder {
@@ -304,17 +335,39 @@ export async function askQuestion(
     updateSession(session);
   }
 
+  const type = question.answerType;
+
+  // Build description with clear spacing
+  const descParts: string[] = [];
+  descParts.push(question.prompt);
+  descParts.push(""); // blank line for spacing
+
+  // Add character limit info for text questions
+  if (type.kind === "text") {
+    const limits: string[] = [];
+    if (type.minLength) limits.push(`Minimum: **${type.minLength}** characters`);
+    if (type.maxLength) limits.push(`Maximum: **${type.maxLength}** characters`);
+    if (limits.length > 0) descParts.push(`📏 ${limits.join(" · ")}`);
+    if (type.optional) descParts.push("*This question is optional — type **N/A** to skip*");
+  }
+
+  // Reply instruction for text-type questions
+  if (type.kind === "text" || type.kind === "image" || type.kind === "media" || type.kind === "link") {
+    descParts.push("");
+    descParts.push("💬 **Type your answer below ↓**");
+  }
+
   const embed = new EmbedBuilder()
-    .setTitle("🎨 UI Commission Request")
-    .setDescription(`**${index + 1}/${total}.** ${question.prompt}`)
+    .setTitle(`📝 Question ${index + 1} of ${total}`)
+    .setDescription(descParts.join("\n"))
     .setColor(0x9b59b6)
     .setFooter({ text: getHint(question) });
 
   const components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
 
-  if (question.answerType.kind === "choice") {
+  if (type.kind === "choice") {
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      question.answerType.options.map((opt) => {
+      type.options.map((opt) => {
         const btn = new ButtonBuilder()
           .setCustomId(`q_choice:${question.id}:${opt.value}`)
           .setLabel(opt.label)
@@ -324,13 +377,13 @@ export async function askQuestion(
       })
     );
     components.push(row);
-  } else if (question.answerType.kind === "dropdown") {
+  } else if (type.kind === "dropdown") {
     const select = new StringSelectMenuBuilder()
       .setCustomId(`q_select:${question.id}`)
       .setPlaceholder("Select an option…")
-      .addOptions(question.answerType.options);
-    if (question.answerType.minValues !== undefined) select.setMinValues(question.answerType.minValues);
-    if (question.answerType.maxValues !== undefined) select.setMaxValues(question.answerType.maxValues);
+      .addOptions(type.options);
+    if (type.minValues !== undefined) select.setMinValues(type.minValues);
+    if (type.maxValues !== undefined) select.setMaxValues(type.maxValues);
     components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select));
   }
 
@@ -340,10 +393,10 @@ export async function askQuestion(
 function getHint(question: Question): string {
   const type = question.answerType;
   switch (type.kind) {
-    case "text":     return type.optional ? "↩️ Type your answer (or type N/A to skip)" : "↩️ Type your answer in this DM";
-    case "image":    return "↩️ Send a message with an image attached";
-    case "media":    return "↩️ Attach images and/or paste links";
-    case "link":     return "↩️ Paste a URL (https://...)";
+    case "text":     return type.optional ? "Type your answer or N/A to skip, then send" : "Type your answer in this DM and send";
+    case "image":    return "Send a message with an image attached";
+    case "media":    return "Attach images and/or paste links, then send";
+    case "link":     return "Paste a URL (https://...) and send";
     case "choice":   return "Click a button above to answer";
     case "dropdown": return "Select from the dropdown above to answer";
   }
