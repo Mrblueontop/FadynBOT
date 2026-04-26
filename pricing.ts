@@ -4,10 +4,12 @@
  * AI-based price estimation for Fadyn Bot commission requests.
  *
  * Call `calculatePrice(answers)` just before rendering the final review embed.
- * It hits the Anthropic API with a structured prompt and returns a
- * `PriceEstimate` containing USD and Robux values plus a short reasoning blurb.
+ * It hits the Groq API (llama-3.3-70b-versatile) with a structured prompt and
+ * returns a `PriceEstimate` containing USD and Robux values plus a reasoning blurb.
  *
- * Integration points (see INTEGRATION GUIDE at the bottom of this file):
+ * Requires: GROQ_API_KEY in your .env / Railway environment variables.
+ *
+ * Integration points:
  *   1. Import and call `calculatePrice` inside `sendReviewEmbed` in flows.ts.
  *   2. Add the returned embed fields to the review EmbedBuilder.
  *   3. Update `paymentMethod` question options in questions.ts (remove Crypto,
@@ -32,18 +34,19 @@ export interface PriceEstimate {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
- * Approximate Robux ↔ USD conversion rate used for display.
- * 1 USD ≈ 100 Robux (post-marketplace-fee estimate).
+ * Approximate Robux ↔ USD conversion used as a FALLBACK only.
+ * The AI returns explicit robuxMin/robuxMax from the pricing sheet.
+ * Basic: 100 R$/$1 | Standard: ~75 R$/$1 | Advanced: ~80 R$/$1
  */
 const ROBUX_PER_USD = 100;
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-4-20250514";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const MODEL = "llama-3.3-70b-versatile";
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
 /**
- * Calls the Anthropic API to estimate a price for the commission described
+ * Calls the Groq API to estimate a price for the commission described
  * by `answers`.  Returns a `PriceEstimate` on success, or a safe fallback
  * object if the API call fails so the bot never crashes on this step.
  */
@@ -53,39 +56,33 @@ export async function calculatePrice(
   const prompt = buildPricingPrompt(answers);
 
   try {
-    const response = await fetch(ANTHROPIC_API_URL, {
+    const response = await fetch(GROQ_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // The Anthropic SDK middleware injects the key automatically when this
-        // runs inside the Claude artifact/worker environment.  If you're running
-        // the bot outside that environment set ANTHROPIC_API_KEY in your .env
-        // and uncomment the next line:
-        // "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
-        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY ?? ""}`,
       },
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 512,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
       }),
     });
 
     if (!response.ok) {
-      console.error(`[pricing] API error ${response.status}`);
+      console.error(`[pricing] Groq API error ${response.status}:`, await response.text());
       return fallbackEstimate();
     }
 
     const data = (await response.json()) as {
-      content: { type: string; text?: string }[];
+      choices: { message: { content: string } }[];
     };
 
-    const text = data.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("");
-
+    const text = data.choices[0]?.message?.content ?? "";
     return parsePricingResponse(text);
   } catch (err) {
     console.error("[pricing] fetch error:", err);
@@ -96,34 +93,42 @@ export async function calculatePrice(
 // ─── Prompt construction ──────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `
-You are a Roblox UI commission pricing expert for a freelance UI designer.
-Your job is to estimate a fair price range for a UI commission based on the
-client's answers to an intake form.
+You are the pricing bot for Fadyn's Roblox UI commission service.
+Your job is to estimate a fair price for a commission using the EXACT tier
+system below. Do not invent prices outside these ranges.
 
-Pricing guidelines:
-- Simple single-screen UI (e.g. one menu, no animations): $5–$10 USD
-- Moderate scope (2–5 screens, basic tweens): $10–$20 USD
-- Complex scope (6+ screens OR rich tween animations): $20–$40 USD
-- Very large / full-game UI suite: $40–$80 USD
+=== OFFICIAL PRICE TIERS ===
 
-Complexity signals (raise price):
-- Many distinct UI elements (HUD + shop + inventory + more)
-- Tween / animation requirement mentioned
-- Custom or unique style requested
-- Tight deadline mentioned
-- Lots of interactivity described
+🟢 Basic UI — $2–$5 USD / 200–500 R$
+  Simple menus, small HUDs, basic layouts. 1–2 screens, no animations,
+  minimal style, straightforward elements.
 
-Simplicity signals (lower price):
-- Minimal style
-- Single screen or panel
-- No animations
-- Small project / prototype
+🟡 Standard UI — $5–$10 USD / 500–750 R$
+  Main menus, shop UI, inventory screens, cleaner designs. 3–5 screens,
+  polished look, may have simple tweens.
 
-Always respond ONLY with valid JSON — no markdown fences, no extra text:
+🔴 Advanced UI — $15–$25 USD / 750–2000 R$
+  Full UI systems, polished and detailed layouts. 6+ screens OR rich
+  animations, custom/complex style, heavy interactivity.
+
+=== ADD-ONS (add to base price if applicable) ===
+- Rush order: +30% of the base price
+- Animations (AI-coded): +$1 USD / +50 R$ per animated screen
+  (only add this if the client specifically mentions wanting animations/tweens)
+
+=== RULES ===
+- NEVER quote below $2 USD or above $25 USD.
+- Roblox tax is already included — do not add extra for it.
+- If the scope is unclear, default to the lower end of the matching tier.
+- One free revision is included — do not adjust price for it.
+- Output ONLY valid JSON, no markdown fences, no extra text:
+
 {
   "usdMin": <number>,
   "usdMax": <number>,
-  "reasoning": "<1–2 sentences explaining the estimate>"
+  "robuxMin": <number>,
+  "robuxMax": <number>,
+  "reasoning": "<1–2 sentences: which tier and why, mention any add-ons>"
 }
 `.trim();
 
@@ -142,7 +147,7 @@ function buildPricingPrompt(answers: Record<string, string>): string {
     paymentMethod: "Preferred payment",
     budgetPaypal: "Budget (PayPal)",
     budgetRobux: "Budget (Robux)",
-    budgetOther: "Budget (other)",
+    budgetGiftCard: "Budget (Gift Card)",
     extraInfo: "Extra info / deadline",
   };
 
@@ -164,18 +169,22 @@ function buildPricingPrompt(answers: Record<string, string>): string {
 
 function parsePricingResponse(text: string): PriceEstimate {
   try {
-    // Strip any accidental markdown fences just in case
     const clean = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(clean) as {
       usdMin: number;
       usdMax: number;
+      robuxMin?: number;
+      robuxMax?: number;
       reasoning: string;
     };
 
-    const usdMin = Math.max(1, Math.round(parsed.usdMin));
-    const usdMax = Math.max(usdMin, Math.round(parsed.usdMax));
-    const robuxMin = usdMin * ROBUX_PER_USD;
-    const robuxMax = usdMax * ROBUX_PER_USD;
+    // Clamp USD to the actual price sheet limits: $2–$25
+    const usdMin = Math.min(Math.max(2, Math.round(parsed.usdMin)), 25);
+    const usdMax = Math.min(Math.max(usdMin, Math.round(parsed.usdMax)), 25);
+
+    // Use AI-supplied Robux if present, otherwise convert
+    const robuxMin = parsed.robuxMin ? Math.round(parsed.robuxMin) : usdMin * ROBUX_PER_USD;
+    const robuxMax = parsed.robuxMax ? Math.round(parsed.robuxMax) : usdMax * ROBUX_PER_USD;
 
     return {
       usd: `$${usdMin} – $${usdMax}`,
@@ -191,11 +200,11 @@ function parsePricingResponse(text: string): PriceEstimate {
 
 function fallbackEstimate(): PriceEstimate {
   return {
-    usd: "$10 – $25",
-    robux: "1,000 – 2,500 R$",
+    usd: "$5 – $10",
+    robux: "500 – 750 R$",
     reasoning:
-      "Price estimated based on typical commission scope. Final price will be confirmed by the designer.",
-    raw: { usdMin: 10, usdMax: 25, robuxMin: 1000, robuxMax: 2500 },
+      "Estimated at Standard tier. Final price will be confirmed by the designer after reviewing your request.",
+    raw: { usdMin: 5, usdMax: 10, robuxMin: 500, robuxMax: 750 },
   };
 }
 
