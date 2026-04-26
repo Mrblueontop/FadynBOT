@@ -44,15 +44,8 @@ export const commissionQuestions: Question[] = [
   },
   {
     id: "uiRequirementType",
-    prompt: "📝 **Step 4: UI Requirement Type**\nWhat do you need for each frame?",
-    answerType: {
-      kind: "dropdown",
-      options: [
-        { label: "Frames only", value: "Frames only" },
-        { label: "Buttons only", value: "Buttons only" },
-        { label: "Both Frames & Buttons", value: "Both Frames & Buttons" },
-      ],
-    },
+    prompt: "📝 **Step 4: UI Elements Needed**\nClick the button below to fill in what buttons and frames you need for your UI. You can describe each element in detail.",
+    answerType: { kind: "choice", options: [{ label: "Fill in UI Elements", value: "open_modal", emoji: "📋" }] },
   },
   {
     id: "buttonStyle",
