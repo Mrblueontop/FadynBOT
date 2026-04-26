@@ -1,7 +1,7 @@
 import { type Message, ChannelType } from "discord.js";
 import { getSession, updateSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
-import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered } from "./flows.js";
+import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered, buildCloseConfirmPayload } from "./flows.js";
 
 export async function handleMessage(message: Message): Promise<void> {
   // Only handle DMs
@@ -10,6 +10,13 @@ export async function handleMessage(message: Message): Promise<void> {
   const session = getSession(message.author.id);
   if (!session) return;
   if (session.step !== "answering" && session.step !== "editing_from_review") return;
+
+  // ── Close / cancel keyword detection ────────────────────────────────────
+  const CLOSE_KEYWORDS = /^\s*(end|close|cancel)\s*$/i;
+  if (CLOSE_KEYWORDS.test(message.content.trim())) {
+    await message.channel.send(buildCloseConfirmPayload());
+    return;
+  }
 
   const questions = getQuestionsForRoles(session.roles, session.answers);
 
@@ -21,6 +28,10 @@ export async function handleMessage(message: Message): Promise<void> {
   if (currentIndex < 0) return;
   const currentQ = questions[currentIndex];
   if (!currentQ) return;
+
+  // ── Reply-only enforcement ───────────────────────────────────────────────
+  const expectedMsgId = session.questionMessageIds?.[currentQ.id];
+  if (expectedMsgId && message.reference?.messageId !== expectedMsgId) return;
 
   // Only handle text/image/media/link type questions via message
   const kind = currentQ.answerType.kind;
@@ -78,6 +89,16 @@ export async function handleMessage(message: Message): Promise<void> {
         return;
       }
       answer = combined.join("\n");
+    }
+  }
+
+  // ── Reference question: image or URL only ────────────────────────────────
+  if (currentQ.id === "reference") {
+    const hasAttachment = message.attachments.size > 0;
+    const isUrl = /^https?:\/\//i.test(answer);
+    if (!hasAttachment && !isUrl) {
+      await message.reply({ content: "⚠️ You must provide an image or link reference." }).catch(() => {});
+      return;
     }
   }
 
