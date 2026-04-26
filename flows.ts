@@ -1,21 +1,21 @@
 /**
  * flows.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Core flow helpers for FadynBot:
- *   - sendStartPrompt            DM the "start" prompt with role selector
- *   - askQuestion                Send a single question message to DM
- *   - updateQuestionToAnswered   Edit an answered question in-place
- *   - sendReviewEmbed            Build + send the full review embed (with AI price)
- *   - sendReviewEditSelect       Dropdown to pick which answer to edit
- *   - submitApplication          Post the order to the log channel + open ticket
- *   - buildCustomAnswerModal     Text-input modal for a question
- *   - buildUiElementsModalPage1 / Page2
- *   - buildUiElementsAfterAnswerRow
- *   - buildCloseConfirmPayload
- *   - buildApplicationCancelledEmbed
- *   - buildApplicationSentEmbed
- *   - sendPortfolioAddMorePrompt
- *   - MODAL_QUESTION_IDS
+ * Core flow helpers for FadynBot.
+ *
+ * Changes:
+ *   - apply_start: sends ephemeral with "Open DMs" button instead of direct DM
+ *     to eliminate the double "check your DMs" message.
+ *   - sendStartPrompt: improved embed, clearer instructions.
+ *   - askQuestion: footer now says "Please reply directly to this message."
+ *   - buildUiElementsModal: replaced 2-page modal with single 2-field modal
+ *     (Buttons Needed + Frames Needed).
+ *   - buildUiElementsAfterAnswerRow: simplified — no Page 2 button.
+ *   - sendReviewEmbed: Edit button ALWAYS shown, submit now edits existing
+ *     message instead of sending new one.
+ *   - submitApplication: ticket embed title changed to "📩 New Commission Request",
+ *     description reflects it's a new order notification, not confirmation.
+ *   - buildCustomAnswerModal: always required.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -50,6 +50,9 @@ export const MODAL_QUESTION_IDS = new Set<string>([
   // add any IDs here that you want to force through a modal
 ]);
 
+/** Footer text added to every question embed to guide reply behaviour. */
+const REPLY_FOOTER = "Please reply directly to this message with your answer.";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 type AnyChannel = DMChannel | TextChannel;
@@ -67,7 +70,7 @@ function truncate(str: string, max: number): string {
 // ─── Start prompt ─────────────────────────────────────────────────────────────
 
 /**
- * Sends the opening "Are you ready?" DM with Start / Cancel buttons.
+ * Sends the opening "Commission Request" panel in DMs with Start / Cancel.
  */
 export async function sendStartPrompt(dm: DMChannel): Promise<Message> {
   const embed = new EmbedBuilder()
@@ -76,17 +79,21 @@ export async function sendStartPrompt(dm: DMChannel): Promise<Message> {
       [
         "Hey! Thanks for reaching out about a UI commission.",
         "",
-        "Before we begin, make sure you have the following ready:",
-        "• **A project description** — what your game does",
-        "• **Reference images or links** — any visual style you like",
-        "• **A rough budget** in mind",
+        "**Before we begin, please have the following ready:**",
+        "› A description of your game and what it does",
+        "› Reference images or links showing the style you want",
+        "› Any existing assets (logos, icons, etc.) if applicable",
         "",
-        "The form takes about **2–3 minutes** to complete.",
-        "You can type `cancel` at any time to stop.",
+        "**What to expect:**",
+        "› The form takes about **2–3 minutes** to complete",
+        "› All questions are required unless stated otherwise",
+        "› Type `cancel`, `close`, or `end` at any time to stop",
+        "",
+        "Hit **Start** when you're ready to begin! 🚀",
       ].join("\n")
     )
     .setColor(0x9b59b6)
-    .setFooter({ text: "Hit Start when you're ready!" });
+    .setFooter({ text: "Commission Request • Step 1 starts after you click Start" });
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
@@ -120,7 +127,7 @@ export async function askQuestion(
   const embed = new EmbedBuilder()
     .setDescription(q.prompt)
     .setColor(0x9b59b6)
-    .setFooter({ text: `Question ${index + 1} of ${total}` });
+    .setFooter({ text: `Question ${index + 1} of ${total} • ${REPLY_FOOTER}` });
 
   const components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
 
@@ -170,7 +177,7 @@ export async function askQuestion(
     });
   }
 
-  // ── Portfolio done button ─────────────────────────────────────────────────
+  // ── Portfolio / asset done button ─────────────────────────────────────────
   if (kind === "text" && (q.answerType as any).acceptMedia) {
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
@@ -215,7 +222,7 @@ export async function updateQuestionToAnswered(
   }
 }
 
-// ─── Portfolio "add more" prompt ──────────────────────────────────────────────
+// ─── Portfolio / asset "add more" prompt ──────────────────────────────────────
 
 export async function sendPortfolioAddMorePrompt(
   channel: AnyChannel,
@@ -235,7 +242,8 @@ export async function sendPortfolioAddMorePrompt(
         .setDescription(
           `Got it! **${currentCount}** item(s) uploaded so far.\nSend more or click **Done** to continue.`
         )
-        .setColor(0x9b59b6),
+        .setColor(0x9b59b6)
+        .setFooter({ text: REPLY_FOOTER }),
     ],
     components: [row],
   });
@@ -244,19 +252,18 @@ export async function sendPortfolioAddMorePrompt(
 // ─── Review embed ─────────────────────────────────────────────────────────────
 
 /**
- * Builds and sends the final review embed.
- * Calls the Groq API to calculate an estimated price and appends it.
+ * Builds and sends (or edits) the final review embed.
+ * - showEditButton is now always treated as true (edit button always visible).
+ * - If session.reviewMessageId exists, edits that message instead of sending new one.
  */
 export async function sendReviewEmbed(
   channel: AnyChannel,
   session: SavedApplication,
-  showEditButton: boolean
+  _showEditButton: boolean = true
 ): Promise<Message> {
   const questions = getQuestionsForRoles(session.roles, session.answers);
 
   // ── AI moderation ─────────────────────────────────────────────────────────
-  // Check for gibberish / low-effort answers before showing the review.
-  // If flagged, send a warning and return early — user must edit first.
   try {
     const modResult = await moderateAnswers(session.answers);
     if (!modResult.passed) {
@@ -265,15 +272,23 @@ export async function sendReviewEmbed(
     }
   } catch (err) {
     console.error("[flows] Moderation check error:", err);
-    // fail-open — continue to review if moderation throws
+    // fail-open
   }
 
   const embed = new EmbedBuilder()
     .setTitle("📋 Commission Request — Review")
     .setDescription(
-      "Here's a summary of your request. Check everything looks correct, then hit **Submit**."
+      [
+        "Here's a full summary of your commission request.",
+        "Please review everything carefully before submitting.",
+        "",
+        "› Use **Edit Answers** to change anything",
+        "› Hit **Submit Request** when you're happy with it",
+        "› **Cancel** will permanently discard this request",
+      ].join("\n")
     )
     .setColor(0x9b59b6)
+    .setFooter({ text: "Review your answers before submitting • All info is final once submitted" })
     .setTimestamp();
 
   // ── Answer fields ─────────────────────────────────────────────────────────
@@ -294,23 +309,17 @@ export async function sendReviewEmbed(
     console.error("[flows] Price calculation failed:", err);
     embed.addFields({
       name: "💰 Estimated Price",
-      value: "Price will be confirmed by the designer.",
+      value: "Price will be confirmed by the designer after reviewing your request.",
       inline: false,
     });
   }
 
-  // ── Buttons ───────────────────────────────────────────────────────────────
+  // ── Buttons — Edit is always shown ───────────────────────────────────────
   const submitBtn = new ButtonBuilder()
     .setCustomId("review:submit")
     .setLabel("Submit Request")
     .setStyle(ButtonStyle.Success)
     .setEmoji("📨");
-
-  const cancelBtn = new ButtonBuilder()
-    .setCustomId("review:cancel")
-    .setLabel("Cancel")
-    .setStyle(ButtonStyle.Danger)
-    .setEmoji("✖️");
 
   const editBtn = new ButtonBuilder()
     .setCustomId("review:edit")
@@ -318,11 +327,24 @@ export async function sendReviewEmbed(
     .setStyle(ButtonStyle.Secondary)
     .setEmoji("✏️");
 
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    submitBtn,
-    ...(showEditButton ? [editBtn] : []),
-    cancelBtn
-  );
+  const cancelBtn = new ButtonBuilder()
+    .setCustomId("review:cancel")
+    .setLabel("Cancel")
+    .setStyle(ButtonStyle.Danger)
+    .setEmoji("✖️");
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(submitBtn, editBtn, cancelBtn);
+
+  // ── Edit existing review message if possible ──────────────────────────────
+  if (session.reviewMessageId) {
+    try {
+      const existing = await channel.messages.fetch(session.reviewMessageId);
+      await existing.edit({ embeds: [embed], components: [row] });
+      return existing;
+    } catch {
+      // If the old message can't be edited (deleted, too old), fall through to send
+    }
+  }
 
   return channel.send({ embeds: [embed], components: [row] });
 }
@@ -358,8 +380,15 @@ export async function sendReviewEditSelect(
     embeds: [
       new EmbedBuilder()
         .setTitle("✏️ Edit an Answer")
-        .setDescription("Select the question you'd like to change:")
-        .setColor(0x9b59b6),
+        .setDescription(
+          [
+            "Select the question you'd like to change from the dropdown below.",
+            "",
+            "Your updated answer will be saved and the review will reload.",
+          ].join("\n")
+        )
+        .setColor(0x9b59b6)
+        .setFooter({ text: "Select a question to edit it" }),
     ],
     components: [row],
   });
@@ -379,10 +408,18 @@ export async function submitApplication(
 
   // ── Build log embed ───────────────────────────────────────────────────────
   const logEmbed = new EmbedBuilder()
-    .setTitle("📥 New Commission Request")
+    .setTitle("📩 New Commission Request")
+    .setDescription(
+      [
+        `**Client:** <@${session.userId}>`,
+        `**Submitted:** <t:${Math.floor(Date.now() / 1000)}:f>`,
+        "",
+        "A new commission request has been submitted. Review the details below and open a conversation with the client.",
+      ].join("\n")
+    )
     .setColor(0x9b59b6)
     .setTimestamp()
-    .addFields({ name: "Client", value: `<@${session.userId}>`, inline: true });
+    .addFields({ name: "Client ID", value: session.userId, inline: true });
 
   for (const q of questions) {
     const raw = session.answers[q.id] ?? "";
@@ -411,13 +448,11 @@ export async function submitApplication(
 
   // ── Create ticket channel ─────────────────────────────────────────────────
   try {
-    // Find the guild via any shared guild between bot and user
     const guilds = client.guilds.cache;
     for (const [, guild] of guilds) {
       const member = await guild.members.fetch(session.userId).catch(() => null);
       if (!member) continue;
 
-      // Resolve category
       const category = config.ticketCategoryId
         ? guild.channels.cache.get(config.ticketCategoryId) ?? null
         : null;
@@ -444,7 +479,6 @@ export async function submitApplication(
         ],
       });
 
-      // Welcome message in ticket
       const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId(`ticket:close:${ticketChannel.id}`)
@@ -453,23 +487,28 @@ export async function submitApplication(
           .setEmoji("🔒")
       );
 
+      // Ticket welcome embed — framed as a new order notification for staff,
+      // not as a confirmation message to the client.
+      const ticketWelcomeEmbed = new EmbedBuilder()
+        .setTitle("📩 New Commission Request")
+        .setDescription(
+          [
+            `Hey <@${session.userId}>! Your commission request has been received and a ticket has been opened for you here.`,
+            "",
+            "**What happens next:**",
+            "› A designer will review your request and confirm the details",
+            "› Final pricing and timeline will be agreed before work starts",
+            "› Feel free to add any extra references or notes below",
+            "",
+            "Please be patient — we'll be with you shortly!",
+          ].join("\n")
+        )
+        .setColor(0x9b59b6)
+        .setTimestamp();
+
       await ticketChannel.send({
         content: `<@${session.userId}>`,
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("🎨 Commission Request Received!")
-            .setDescription(
-              [
-                `Hey <@${session.userId}>! Your commission request has been submitted successfully.`,
-                "",
-                "A designer will review your request and get back to you here shortly.",
-                "",
-                "In the meantime, feel free to add any extra details or reference images below.",
-              ].join("\n")
-            )
-            .setColor(0x2ecc71),
-          logEmbed,
-        ],
+        embeds: [ticketWelcomeEmbed, logEmbed],
         components: [closeRow],
       });
 
@@ -488,17 +527,19 @@ export async function submitApplication(
 
 // ─── Modal builders ───────────────────────────────────────────────────────────
 
-/** Generic text-input modal for any question. */
+/** Generic text-input modal for any question. Always required. */
 export function buildCustomAnswerModal(q: Question): ModalBuilder {
   const label = q.prompt.split("\n")[0]?.replace(/📝\s*\*\*/, "").replace(/\*\*/, "").trim() ?? "Answer";
-  const type = q.answerType as { kind: string; minLength?: number; maxLength?: number };
+  const type = q.answerType as { kind: string; minLength?: number; maxLength?: number; optional?: boolean };
+
+  const isOptional = !!(q.answerType as any).optional;
 
   const input = new TextInputBuilder()
     .setCustomId("value")
     .setLabel(truncate(label, 45))
     .setStyle(TextInputStyle.Paragraph)
-    .setRequired(!(q.answerType as any).optional)
-    .setPlaceholder("Type your answer here…");
+    .setRequired(!isOptional) // required unless explicitly optional
+    .setPlaceholder(isOptional ? "Type your answer, or type N/A to skip…" : "Type your answer here…");
 
   if (type.minLength) input.setMinLength(type.minLength);
   if (type.maxLength) input.setMaxLength(Math.min(type.maxLength, 4000));
@@ -509,107 +550,71 @@ export function buildCustomAnswerModal(q: Question): ModalBuilder {
     .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input) as any);
 }
 
-/** Step 4 UI Elements — Page 1 (Main Menu, HUD, Shop, Inventory, Settings). */
-export function buildUiElementsModalPage1(): ModalBuilder {
-  const fields = [
-    { id: "main_menu", label: "Main Menu" },
-    { id: "hud", label: "HUD" },
-    { id: "shop", label: "Shop" },
-    { id: "inventory", label: "Inventory" },
-    { id: "settings", label: "Settings" },
-  ];
-
+/**
+ * Step 4 UI Frames Needed — single modal with 2 fields:
+ *   1. Buttons Needed
+ *   2. Frames Needed
+ *
+ * Replaces the old 2-page modal system entirely.
+ */
+export function buildUiElementsModal(): ModalBuilder {
   const modal = new ModalBuilder()
-    .setCustomId("ui_elements_modal:page1")
-    .setTitle("UI Elements — Page 1 of 2");
+    .setCustomId("ui_elements_modal:main")
+    .setTitle("UI Frames Needed");
 
-  for (const f of fields) {
-    modal.addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder()
-          .setCustomId(f.id)
-          .setLabel(f.label)
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(false)
-          .setPlaceholder(`Describe the ${f.label.toLowerCase()} UI…`)
-          .setMaxLength(500)
-      ) as any
-    );
-  }
+  const buttonsInput = new TextInputBuilder()
+    .setCustomId("buttons_needed")
+    .setLabel("Buttons Needed")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setPlaceholder("e.g. Play, Shop, Inventory, Settings, Back\nLeave blank if you don't need buttons.")
+    .setMaxLength(1000);
+
+  const framesInput = new TextInputBuilder()
+    .setCustomId("frames_needed")
+    .setLabel("Frames Needed")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setPlaceholder("e.g. Main Menu, HUD, Shop Screen, Inventory Screen\nLeave blank if you don't need frames.")
+    .setMaxLength(1000);
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(buttonsInput) as any,
+    new ActionRowBuilder<TextInputBuilder>().addComponents(framesInput) as any
+  );
 
   return modal;
 }
 
-/** Step 4 UI Elements — Page 2 (Leaderboard, Loading, Cutscene, Notifications, Other). */
+/** Keep old export names as aliases so existing button.ts / modal.ts don't break. */
+export function buildUiElementsModalPage1(): ModalBuilder {
+  return buildUiElementsModal();
+}
+
+// Page 2 is no longer used — kept as a no-op export for safety
 export function buildUiElementsModalPage2(): ModalBuilder {
-  const fields = [
-    { id: "leaderboard", label: "Leaderboard" },
-    { id: "loading", label: "Loading Screen" },
-    { id: "cutscene", label: "Cutscene UI" },
-    { id: "notifications", label: "Notifications" },
-    { id: "other", label: "Other" },
-  ];
-
-  const modal = new ModalBuilder()
-    .setCustomId("ui_elements_modal:page2")
-    .setTitle("UI Elements — Page 2 of 2");
-
-  for (const f of fields) {
-    modal.addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder()
-          .setCustomId(f.id)
-          .setLabel(f.label)
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(false)
-          .setPlaceholder(`Describe the ${f.label.toLowerCase()} UI…`)
-          .setMaxLength(500)
-      ) as any
-    );
-  }
-
-  return modal;
+  return buildUiElementsModal();
 }
 
 /**
- * Action row shown after a UI Elements page is submitted.
- * @param page 1 or 2 — controls which buttons appear
+ * Action row shown after UI Elements modal is submitted.
+ * Simplified — no Page 2 anymore.
  */
-export function buildUiElementsAfterAnswerRow(page: 1 | 2): ActionRowBuilder<ButtonBuilder> {
+export function buildUiElementsAfterAnswerRow(_page: 1 | 2 = 1): ActionRowBuilder<ButtonBuilder> {
   const row = new ActionRowBuilder<ButtonBuilder>();
 
-  if (page === 1) {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId("ui_elements:page2")
-        .setLabel("Page 2")
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji("➡️"),
-      new ButtonBuilder()
-        .setCustomId("ui_elements:edit")
-        .setLabel("Edit Page 1")
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji("✏️"),
-      new ButtonBuilder()
-        .setCustomId("ui_elements:next")
-        .setLabel("Next Question")
-        .setStyle(ButtonStyle.Success)
-        .setEmoji("✅")
-    );
-  } else {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId("ui_elements:edit")
-        .setLabel("Edit Page 1")
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji("✏️"),
-      new ButtonBuilder()
-        .setCustomId("ui_elements:next")
-        .setLabel("Next Question")
-        .setStyle(ButtonStyle.Success)
-        .setEmoji("✅")
-    );
-  }
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId("ui_elements:edit")
+      .setLabel("Edit")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("✏️"),
+    new ButtonBuilder()
+      .setCustomId("ui_elements:next")
+      .setLabel("Next Question")
+      .setStyle(ButtonStyle.Success)
+      .setEmoji("✅")
+  );
 
   return row;
 }
@@ -621,7 +626,13 @@ export function buildCloseConfirmPayload(): MessageCreateOptions {
   const embed = new EmbedBuilder()
     .setTitle("⚠️ Cancel Request?")
     .setDescription(
-      "Are you sure you want to cancel your commission request?\n\nAll your answers will be lost."
+      [
+        "Are you sure you want to cancel your commission request?",
+        "",
+        "**All your answers will be lost** and you'll need to start over.",
+        "",
+        "Choose below:",
+      ].join("\n")
     )
     .setColor(0xe74c3c);
 
@@ -645,7 +656,11 @@ export function buildApplicationCancelledEmbed(): EmbedBuilder {
   return new EmbedBuilder()
     .setTitle("❌ Request Cancelled")
     .setDescription(
-      "Your commission request has been cancelled.\n\nFeel free to start a new one from the server whenever you're ready!"
+      [
+        "Your commission request has been cancelled.",
+        "",
+        "Feel free to start a new one from the server whenever you're ready!",
+      ].join("\n")
     )
     .setColor(0xe74c3c);
 }
@@ -657,13 +672,14 @@ export function buildApplicationSentEmbed(): EmbedBuilder {
       [
         "Your commission request has been received! 🎉",
         "",
-        "A ticket channel has been created in the server where you can chat with the designer.",
+        "**A ticket channel has been opened in the server** — head there to chat with the designer.",
         "",
         "**What happens next:**",
-        "• The designer will review your request",
-        "• They'll confirm the final price and timeline",
-        "• Work begins once payment is agreed",
+        "› The designer will review your request",
+        "› They'll confirm the final price and timeline",
+        "› Work begins once payment is agreed",
       ].join("\n")
     )
-    .setColor(0x2ecc71);
+    .setColor(0x2ecc71)
+    .setFooter({ text: "Check the server for your ticket channel" });
 }
