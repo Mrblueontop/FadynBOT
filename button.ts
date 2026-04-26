@@ -18,6 +18,7 @@ import {
   buildUiElementsModalPage1,
   buildUiElementsModalPage2,
   buildUiElementsAfterAnswerRow,
+  buildCloseConfirmPayload,
 } from "./flows.js";
 
 export async function handleButton(interaction: ButtonInteraction): Promise<void> {
@@ -186,6 +187,19 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     await interaction.deferUpdate();
     const dm = await user.createDM();
     await sendReviewEditSelect(dm, session);
+    return;
+  }
+
+  // ── app:close:confirm — user confirmed cancellation ───────────────────────
+  if (customId === "app:close:confirm") {
+    clearSession(user.id);
+    await interaction.update({ embeds: [buildApplicationCancelledEmbed()], components: [] });
+    return;
+  }
+
+  // ── app:close:cancel — user chose to keep going ───────────────────────────
+  if (customId === "app:close:cancel") {
+    await interaction.update({ embeds: [], components: [], content: "Got it — carry on! 👍" });
     return;
   }
 
