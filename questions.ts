@@ -3,11 +3,17 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * All commission intake questions for FadynBot.
  *
- * Changes from original:
- *   - Payment method: removed "Other"/Crypto, added "Gift Card"
- *   - New conditional question: budgetGiftCard (Step 10c)
- *   - budgetOther removed
- *   - Step 6 overallStyle has two extra options (Sci-Fi, Fantasy)
+ * Changes:
+ *   - Step 4: "UI Frames Needed" — replaced multi-page modal with 2-field modal
+ *     (Buttons Needed + Frames Needed). Conditional logic skips button/frame
+ *     questions based on which fields are filled.
+ *   - Step 5: buttonStyle — only shown if buttons field is filled
+ *   - Step 6: overallStyle — only shown if frames field is filled (not buttons-only)
+ *   - Step 7: "Visual Style & Colors" (renamed from Color Scheme)
+ *   - Step 8: Reference — required (no skip)
+ *   - NEW Step 9: Assets — "Do you have any assets to include?"
+ *   - Step 10: Payment Method — supports multiple methods, no budget question
+ *   - Step 11: Extra Info
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -39,6 +45,24 @@ export function getRoleDisplayName(key: string): string {
   return key;
 }
 
+// ─── Helpers for UI element conditional logic ─────────────────────────────────
+
+/** Returns true if the user filled in the Buttons Needed field. */
+export function hasButtons(answers: Record<string, string>): boolean {
+  const raw = answers["uiRequirementType"] ?? "";
+  const match = raw.match(/Buttons Needed:\s*(.+)/i);
+  return !!(match && match[1]?.trim());
+}
+
+/** Returns true if the user filled in the Frames Needed field. */
+export function hasFrames(answers: Record<string, string>): boolean {
+  const raw = answers["uiRequirementType"] ?? "";
+  const match = raw.match(/Frames Needed:\s*(.+)/i);
+  return !!(match && match[1]?.trim());
+}
+
+// ─── Questions ────────────────────────────────────────────────────────────────
+
 export const commissionQuestions: Question[] = [
   // ── Step 1: Name ──────────────────────────────────────────────────────────
   {
@@ -62,18 +86,23 @@ export const commissionQuestions: Question[] = [
     answerType: { kind: "text", minLength: 20, maxLength: 1000 },
   },
 
-  // ── Step 4: UI Elements ───────────────────────────────────────────────────
+  // ── Step 4: UI Frames Needed ──────────────────────────────────────────────
+  // Opens a 2-field modal: "Buttons Needed" and "Frames Needed".
+  // Downstream questions check hasButtons() / hasFrames() to decide what to show.
   {
     id: "uiRequirementType",
     prompt:
-      "📝 **Step 4: UI Elements Needed**\nClick the button below to fill in what UI screens and elements you need (buttons, frames, HUD, shop, etc.).",
+      "📝 **Step 4: UI Frames Needed**\nClick **Fill In** below to specify what UI elements you need.\n\n" +
+      "• **Buttons Needed** — list any buttons (e.g. Play, Shop, Inventory)\n" +
+      "• **Frames Needed** — list any frames/screens (e.g. Main Menu, HUD, Leaderboard)\n\n" +
+      "Leave a field blank if you don't need that type.",
     answerType: {
       kind: "choice",
-      options: [{ label: "Fill in UI Elements", value: "open_modal", emoji: "📋" }],
+      options: [{ label: "Fill In", value: "open_modal", emoji: "📋" }],
     },
   },
 
-  // ── Step 5: Button Style ──────────────────────────────────────────────────
+  // ── Step 5: Button Style — only if buttons were specified ─────────────────
   {
     id: "buttonStyle",
     prompt: "📝 **Step 5: Button Style**\nSelect your preferred button style:",
@@ -83,15 +112,17 @@ export const commissionQuestions: Question[] = [
         { label: "Rounded", value: "Rounded", description: "Soft, rounded corners" },
         { label: "Square", value: "Square", description: "Sharp, angular edges" },
         { label: "Minimal", value: "Minimal", description: "Clean, no-frills look" },
-        { label: "Custom", value: "Custom", description: "I'll describe it in extra info" },
+        { label: "Custom", value: "Custom", description: "Describe it in extra info" },
       ],
     },
+    showIf: (a) => hasButtons(a),
   },
 
-  // ── Step 6: Overall Style ─────────────────────────────────────────────────
+  // ── Step 6: Overall Style — only if frames were specified ─────────────────
+  // If user only has buttons (no frames), this question is skipped entirely.
   {
     id: "overallStyle",
-    prompt: "📝 **Step 6: Overall Style**\nSelect your preferred overall UI style:",
+    prompt: "📝 **Step 6: Overall Style**\nSelect your preferred overall UI style for your frames/screens:",
     answerType: {
       kind: "dropdown",
       options: [
@@ -99,31 +130,67 @@ export const commissionQuestions: Question[] = [
         { label: "Minimal", value: "Minimal", description: "Clean, flat, understated" },
         { label: "Sci-Fi", value: "Sci-Fi", description: "Futuristic, glowing, techy" },
         { label: "Fantasy", value: "Fantasy", description: "Ornate, magical, detailed" },
-        { label: "Custom", value: "Custom", description: "I'll describe it below" },
+        { label: "Custom", value: "Custom", description: "Describe it below" },
+      ],
+    },
+    showIf: (a) => hasFrames(a),
+  },
+
+  // ── Step 7: Visual Style & Colors ────────────────────────────────────────
+  // Renamed from "Color Scheme" — now clearly about visual colors/branding.
+  {
+    id: "colorScheme",
+    prompt:
+      "📝 **Step 7: Visual Style & Colors**\n" +
+      "Describe the colors and visual feel you want — primary colors, accent colors, dark/light theme, hex codes if you have them, etc.\n\n" +
+      "Example: *\"Dark background, neon green accents, #00FF7F, futuristic feel\"*",
+    answerType: { kind: "text", minLength: 5, maxLength: 500 },
+  },
+
+  // ── Step 8: Reference — required ─────────────────────────────────────────
+  {
+    id: "reference",
+    prompt:
+      "📝 **Step 8: Reference**\n" +
+      "Provide a reference — upload an image attachment **or** paste a direct image/link URL.\n\n" +
+      "This is **required**. It helps the designer understand your vision.\n" +
+      "You can send multiple images or links.",
+    answerType: { kind: "text", acceptMedia: true, maxLength: 800 },
+  },
+
+  // ── Step 9: Assets ────────────────────────────────────────────────────────
+  {
+    id: "hasAssets",
+    prompt:
+      "📝 **Step 9: Assets**\n" +
+      "Do you have any existing assets (images, icons, logos, UI elements) you'd like to include in the commission?",
+    answerType: {
+      kind: "choice",
+      options: [
+        { label: "Yes, I have assets", value: "Yes", emoji: "✅" },
+        { label: "No, start fresh", value: "No", emoji: "❌" },
       ],
     },
   },
 
-  // ── Step 7: Color Scheme ──────────────────────────────────────────────────
+  // ── Step 9b: Asset Upload — only if user said Yes ─────────────────────────
   {
-    id: "colorScheme",
+    id: "assetFiles",
     prompt:
-      "📝 **Step 7: Color Scheme**\nDescribe your preferred colors, fonts, or brand palette. Include hex codes if you have them.",
-    answerType: { kind: "text", maxLength: 500 },
+      "📝 **Step 9b: Upload Your Assets**\n" +
+      "Upload your assets (images, icons, logos, etc.) as attachments, or paste direct URLs.\n\n" +
+      "You can send multiple messages. Click **Done** when finished.",
+    answerType: { kind: "text", acceptMedia: true, maxLength: 2000 },
+    showIf: (a) => a["hasAssets"] === "Yes",
   },
 
-  // ── Step 8: Reference ─────────────────────────────────────────────────────
-  {
-    id: "reference",
-    prompt:
-      "📝 **Step 8: Reference**\nProvide a reference — upload an image attachment **or** paste a direct image URL.\nThis helps the designer understand your vision.",
-    answerType: { kind: "text", acceptMedia: true, maxLength: 800 },
-  },
-
-  // ── Step 9: Payment Method ────────────────────────────────────────────────
+  // ── Step 10: Payment Method ───────────────────────────────────────────────
   {
     id: "paymentMethod",
-    prompt: "📝 **Step 9: Payment Method**\nHow would you like to pay?",
+    prompt:
+      "📝 **Step 10: Payment Method**\n" +
+      "How would you like to pay? You can select your preferred method below.\n\n" +
+      "*(Final price will be confirmed by the designer after reviewing your request.)*",
     answerType: {
       kind: "dropdown",
       options: [
@@ -134,61 +201,11 @@ export const commissionQuestions: Question[] = [
     },
   },
 
-  // ── Step 10a: Budget — PayPal ─────────────────────────────────────────────
-  {
-    id: "budgetPaypal",
-    prompt: "📝 **Step 10: Budget (PayPal)**\nWhat is your rough budget?",
-    answerType: {
-      kind: "dropdown",
-      options: [
-        { label: "Under $5", value: "Under $5" },
-        { label: "$5 – $10", value: "$5-$10" },
-        { label: "$10 – $20", value: "$10-$20" },
-        { label: "$20 – $40", value: "$20-$40" },
-        { label: "$40+", value: "$40+" },
-      ],
-    },
-    showIf: (a) => a["paymentMethod"] === "PayPal",
-  },
-
-  // ── Step 10b: Budget — Robux ──────────────────────────────────────────────
-  {
-    id: "budgetRobux",
-    prompt: "📝 **Step 10: Budget (Robux)**\nWhat is your rough budget?",
-    answerType: {
-      kind: "dropdown",
-      options: [
-        { label: "Under 250 R$", value: "Under 250 R$" },
-        { label: "250 – 500 R$", value: "250-500 R$" },
-        { label: "500 – 1,000 R$", value: "500-1k R$" },
-        { label: "1,000 – 5,000 R$", value: "1k-5k R$" },
-        { label: "5,000+ R$", value: "5k+ R$" },
-      ],
-    },
-    showIf: (a) => a["paymentMethod"] === "Robux",
-  },
-
-  // ── Step 10c: Budget — Gift Card ──────────────────────────────────────────
-  {
-    id: "budgetGiftCard",
-    prompt: "📝 **Step 10: Budget (Gift Card)**\nWhat is your rough budget in USD?",
-    answerType: {
-      kind: "dropdown",
-      options: [
-        { label: "Under $5", value: "Under $5" },
-        { label: "$5 – $10", value: "$5-$10" },
-        { label: "$10 – $25", value: "$10-$25" },
-        { label: "$25+", value: "$25+" },
-      ],
-    },
-    showIf: (a) => a["paymentMethod"] === "Gift Card",
-  },
-
   // ── Step 11: Extra Info ───────────────────────────────────────────────────
   {
     id: "extraInfo",
     prompt:
-      "📝 **Step 11: Extra Info**\nAny notes, deadlines, or special requests? Type **N/A** to skip.",
+      "📝 **Step 11: Extra Info**\nAny additional notes, deadlines, or special requests?\n\nType **N/A** to skip.",
     answerType: { kind: "text", optional: true, maxLength: 1000 },
   },
 ];
