@@ -6,6 +6,7 @@ import {
   sendReviewEmbed,
   buildCustomAnswerModal,
   MODAL_QUESTION_IDS,
+  updateQuestionToAnswered,
 } from "./flows.js";
 
 export async function handleSelectMenu(interaction: StringSelectMenuInteraction): Promise<void> {
@@ -20,6 +21,15 @@ export async function handleSelectMenu(interaction: StringSelectMenuInteraction)
     session.answers[questionId] = values.join(", ");
 
     const questions = getQuestionsForRoles(session.roles, session.answers);
+    const currentIndex = questions.findIndex((q) => q.id === questionId);
+
+    // Edit original question message in-place
+    const dm = await user.createDM();
+    const msgId = session.questionMessageIds?.[questionId];
+    if (msgId && currentIndex >= 0) {
+      const q = questions[currentIndex]!;
+      await updateQuestionToAnswered(dm, msgId, q, session.answers[questionId]!, currentIndex, questions.length);
+    }
 
     // Check if next question is a modal-triggered one
     const nextIndex = session.step === "editing_from_review"
@@ -41,7 +51,6 @@ export async function handleSelectMenu(interaction: StringSelectMenuInteraction)
       session.editingQuestionId = undefined;
       updateSession(session);
       await interaction.deferUpdate();
-      const dm = await user.createDM();
       const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
       session.reviewMessageId = msg.id;
       updateSession(session);
@@ -53,7 +62,6 @@ export async function handleSelectMenu(interaction: StringSelectMenuInteraction)
       session.step = "review";
       updateSession(session);
       await interaction.deferUpdate();
-      const dm = await user.createDM();
       const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
       session.reviewMessageId = msg.id;
       updateSession(session);
@@ -61,7 +69,6 @@ export async function handleSelectMenu(interaction: StringSelectMenuInteraction)
       session.currentQuestionIndex = next;
       updateSession(session);
       await interaction.deferUpdate();
-      const dm = await user.createDM();
       const q = questions[next]!;
       const msgOut = await askQuestion(dm, q, next, questions.length, session);
       if (!session.questionMessageIds) session.questionMessageIds = {};
