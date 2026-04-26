@@ -41,6 +41,7 @@ import { type SavedApplication, updateSession, clearSession, storeSubmission } f
 import { getQuestionsForRoles, type Question, resolveAnswerLabel } from "./questions.js";
 import { config } from "./config.js";
 import { calculatePrice, buildPriceEmbedFields } from "./pricing.js";
+import { moderateAnswers, buildModerationWarningPayload } from "./moderation.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -252,6 +253,20 @@ export async function sendReviewEmbed(
   showEditButton: boolean
 ): Promise<Message> {
   const questions = getQuestionsForRoles(session.roles, session.answers);
+
+  // ── AI moderation ─────────────────────────────────────────────────────────
+  // Check for gibberish / low-effort answers before showing the review.
+  // If flagged, send a warning and return early — user must edit first.
+  try {
+    const modResult = await moderateAnswers(session.answers);
+    if (!modResult.passed) {
+      console.log(`[flows] Moderation failed for ${session.userId}:`, modResult.flags);
+      return channel.send(buildModerationWarningPayload(modResult));
+    }
+  } catch (err) {
+    console.error("[flows] Moderation check error:", err);
+    // fail-open — continue to review if moderation throws
+  }
 
   const embed = new EmbedBuilder()
     .setTitle("📋 Commission Request — Review")
