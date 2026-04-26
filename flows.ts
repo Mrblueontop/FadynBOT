@@ -163,7 +163,94 @@ export function buildCustomAnswerModal(question: Question): ModalBuilder {
   return modal;
 }
 
-// ─── Multi-page review edit modal ────────────────────────────────────────────
+// ─── Step 4 — UI Elements multi-page modal ───────────────────────────────────
+
+export function buildUiElementsModalPage1(): ModalBuilder {
+  const modal = new ModalBuilder()
+    .setCustomId("ui_elements_modal:page1")
+    .setTitle("UI Elements — Page 1 of 2");
+
+  const fields = [
+    { id: "main_menu",   label: "Main Menu (buttons + frames needed)",   placeholder: "e.g. Play button, Settings button, Title frame" },
+    { id: "hud",         label: "HUD (heads-up display elements)",        placeholder: "e.g. Health bar frame, XP bar, coin counter" },
+    { id: "shop",        label: "Shop / Store (buttons + frames)",        placeholder: "e.g. Buy button, Item frame, Currency display" },
+    { id: "inventory",   label: "Inventory (buttons + frames)",           placeholder: "e.g. Item slot frames, Equip button, Close button" },
+    { id: "settings",    label: "Settings Menu (buttons + frames)",       placeholder: "e.g. Volume slider frame, Toggle buttons, Back button" },
+  ];
+
+  for (const f of fields) {
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId(f.id)
+          .setLabel(f.label.slice(0, 45))
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder(f.placeholder)
+          .setRequired(false)
+          .setMaxLength(500)
+      )
+    );
+  }
+  return modal;
+}
+
+export function buildUiElementsModalPage2(): ModalBuilder {
+  const modal = new ModalBuilder()
+    .setCustomId("ui_elements_modal:page2")
+    .setTitle("UI Elements — Page 2 of 2");
+
+  const fields = [
+    { id: "leaderboard", label: "Leaderboard (buttons + frames)",         placeholder: "e.g. Player row frames, Rank display, Close button" },
+    { id: "loading",     label: "Loading Screen (elements needed)",       placeholder: "e.g. Progress bar frame, Logo frame, Tips text" },
+    { id: "cutscene",    label: "Cutscene / Cinematic UI",                placeholder: "e.g. Dialogue box frame, Skip button, Name label" },
+    { id: "notifications", label: "Notifications / Popups",               placeholder: "e.g. Alert frame, Confirm button, Dismiss button" },
+    { id: "other",       label: "Other / Custom Elements",                placeholder: "e.g. Anything else not listed above" },
+  ];
+
+  for (const f of fields) {
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId(f.id)
+          .setLabel(f.label.slice(0, 45))
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder(f.placeholder)
+          .setRequired(false)
+          .setMaxLength(500)
+      )
+    );
+  }
+  return modal;
+}
+
+export function buildUiElementsAfterAnswerRow(page: 1 | 2): ActionRowBuilder<ButtonBuilder> {
+  const buttons = [
+    new ButtonBuilder()
+      .setCustomId("ui_elements:edit")
+      .setLabel("Edit")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("✏️"),
+    new ButtonBuilder()
+      .setCustomId("ui_elements:next")
+      .setLabel("Next →")
+      .setStyle(ButtonStyle.Success)
+      .setEmoji("➡️"),
+  ];
+
+  if (page === 1) {
+    buttons.splice(1, 0,
+      new ButtonBuilder()
+        .setCustomId("ui_elements:page2")
+        .setLabel("Page 2")
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji("📄")
+    );
+  }
+
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
+}
+
+
 
 export function buildReviewEditModal(session: SavedApplication, page: number): ModalBuilder {
   const questions = getQuestionsForRoles(session.roles, session.answers);
