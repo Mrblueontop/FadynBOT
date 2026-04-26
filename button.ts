@@ -15,6 +15,9 @@ import {
   submitApplication,
   buildCustomAnswerModal,
   MODAL_QUESTION_IDS,
+  buildUiElementsModalPage1,
+  buildUiElementsModalPage2,
+  buildUiElementsAfterAnswerRow,
 } from "./flows.js";
 
 export async function handleButton(interaction: ButtonInteraction): Promise<void> {
@@ -86,9 +89,38 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     return;
   }
 
+  // ── Step 4: open UI elements modal page 1 ────────────────────────────────
+  if (customId === "q_choice:uiRequirementType:open_modal") {
+    await interaction.showModal(buildUiElementsModalPage1());
+    return;
+  }
+
+  // ── Step 4: open page 2 modal ─────────────────────────────────────────────
+  if (customId === "ui_elements:page2") {
+    await interaction.showModal(buildUiElementsModalPage2());
+    return;
+  }
+
+  // ── Step 4: edit — reopen page 1 ─────────────────────────────────────────
+  if (customId === "ui_elements:edit") {
+    await interaction.showModal(buildUiElementsModalPage1());
+    return;
+  }
+
+  // ── Step 4: next — advance to step 5 ─────────────────────────────────────
+  if (customId === "ui_elements:next") {
+    const session = getSession(user.id);
+    if (!session) return;
+    await interaction.deferUpdate();
+    await advanceOrReview(interaction, session);
+    return;
+  }
+
   // ── q_choice — inline button answer ──────────────────────────────────────
   if (customId.startsWith("q_choice:")) {
-    const [, questionId, value] = customId.split(":");
+    const parts = customId.split(":");
+    const questionId = parts[1];
+    const value = parts[2];
     const session = getSession(user.id);
     if (!session || !questionId || !value) return;
 
@@ -184,6 +216,7 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     return;
   }
 }
+
 
 async function advanceOrReview(interaction: ButtonInteraction, session: ReturnType<typeof getSession> & object): Promise<void> {
   if (!session) return;
