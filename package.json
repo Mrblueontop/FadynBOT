@@ -1,26 +1,17 @@
 {
   "name": "fadynbot",
   "version": "1.0.0",
-  "description": "fadyn",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "node index.js",
     "dev": "tsx index.ts",
-    "register": "tsx register-commands.ts"
+    "start": "node index.js"
   },
   "engines": {
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@discordjs/opus": "^0.9.0",
-    "@discordjs/voice": "^0.17.0",
-    "discord.js": "^14.16.3",
-    "ffmpeg-static": "^5.2.0",
-    "ytdl-core": "^4.11.5",
-    "ytsr": "^3.8.0",
-    "node-fetch": "^3.3.2"
+    "discord.js": "^14.16.3"
   },
   "devDependencies": {
     "@types/node": "^20.17.9",
