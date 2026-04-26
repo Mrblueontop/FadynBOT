@@ -139,6 +139,12 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     const q = questions.find((q) => q.id === questionId);
     if (!q) return;
 
+    // Special case: Step 4 (uiRequirementType) — reopen modal page 1
+    if (questionId === "uiRequirementType") {
+      await interaction.showModal(buildUiElementsModalPage1());
+      return;
+    }
+
     if (MODAL_QUESTION_IDS.has(questionId) || q.answerType.kind === "text") {
       await interaction.showModal(buildCustomAnswerModal(q));
     } else {
