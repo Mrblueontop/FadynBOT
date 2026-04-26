@@ -1,701 +1,139 @@
-import {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  StringSelectMenuBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  ChannelType,
-  PermissionFlagsBits,
-  type DMChannel,
-  type Client,
-  type Message,
-  type Guild,
-  type TextChannel,
-} from "discord.js";
-import { config } from "./config.js";
-import { getQuestionsForRoles, resolveAnswerLabel, type Question } from "./questions.js";
-import { updateSession, getSession, type SavedApplication } from "./data.js";
-export type { SavedApplication } from "./data.js";
+import { type Message, ChannelType } from "discord.js";
+import { getSession, updateSession } from "./data.js";
+import { getQuestionsForRoles } from "./questions.js";
+import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered, buildCloseConfirmPayload } from "./flows.js";
 
-// ─── Start prompt ─────────────────────────────────────────────────────────────
+export async function handleMessage(message: Message): Promise<void> {
+  // Only handle DMs
+  if (message.channel.type !== ChannelType.DM) return;
 
-export async function sendStartPrompt(channel: DMChannel): Promise<Message> {
-  // Clean up any old start messages
-  try {
-    const recent = await channel.messages.fetch({ limit: 50 });
-    for (const [, msg] of recent) {
-      if (!msg.author.bot) continue;
-      const hasStartButton = (msg.components as any[]).some((row: any) =>
-        (row.components as any[]).some((c: any) => c.customId === "app:start")
-      );
-      if (hasStartButton) await msg.delete().catch(() => {});
-    }
-  } catch {}
+  const session = getSession(message.author.id);
+  if (!session) return;
+  if (session.step !== "answering" && session.step !== "editing_from_review") return;
 
-  const embed = new EmbedBuilder()
-    .setTitle("🎨 Roblox UI Commission Request")
-    .setDescription(
-      [
-        "Thanks for your interest in a UI commission!",
-        "",
-        "I'll send you a series of questions about your project. **You have 15 minutes per question** — if you go over, your application will be cancelled and you'll need to restart.",
-        "",
-        "You can cancel at any time by clicking **Cancel** below.",
-        "",
-        "Ready to get started?",
-      ].join("\n")
-    )
-    .setColor(0x9b59b6);
-
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId("app:start").setLabel("Start Commission Request").setStyle(ButtonStyle.Success).setEmoji("📩"),
-    new ButtonBuilder().setCustomId("app:cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger).setEmoji("❌")
-  );
-
-  return await channel.send({ embeds: [embed], components: [row] });
-}
-
-// ─── Generic embed builders ───────────────────────────────────────────────────
-
-export function buildApplicationStartedEmbed(): EmbedBuilder {
-  return new EmbedBuilder()
-    .setTitle("Commission Request Started")
-    .setDescription("Please answer the questions below. Use the dropdowns where provided, or type your answer in DMs.")
-    .setColor(0x2ecc71);
-}
-
-export function buildApplicationCancelledEmbed(): EmbedBuilder {
-  return new EmbedBuilder()
-    .setTitle("Commission Request Cancelled")
-    .setDescription("Your request has been cancelled. You can start a new one at any time!")
-    .setColor(0xe74c3c);
-}
-
-export function buildAnsweredEmbed(question: Question, answer: string, index: number, total: number): EmbedBuilder {
-  const displayAnswer = answer.length > 900 ? answer.slice(0, 897) + "…" : answer;
-  return new EmbedBuilder()
-    .setTitle(`✅ Question ${index + 1} of ${total} — Answered`)
-    .setDescription(
-      [
-        question.prompt,
-        "",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        `📌 **Your Answer:**`,
-        `> ${displayAnswer.replace(/\n/g, "\n> ")}`,
-      ].join("\n")
-    )
-    .setColor(0x2ecc71)
-    .setFooter({ text: "Click Edit Answer if you'd like to change this" });
-}
-
-export function buildEditButtonRow(questionId: string): ActionRowBuilder<ButtonBuilder> {
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(`edit_q:${questionId}`).setLabel("Edit Answer").setStyle(ButtonStyle.Secondary).setEmoji("✏️")
-  );
-}
-
-// Edit the original question message in-place to show answered state
-export async function updateQuestionToAnswered(
-  channel: DMChannel,
-  messageId: string,
-  question: Question,
-  answer: string,
-  index: number,
-  total: number
-): Promise<void> {
-  try {
-    const msg = await channel.messages.fetch(messageId);
-    await msg.edit({
-      embeds: [buildAnsweredEmbed(question, answer, index, total)],
-      components: [buildEditButtonRow(question.id)],
-    });
-  } catch {
-    // If message can't be edited (too old / deleted), silently skip
-  }
-}
-
-export function buildApplicationSentEmbed(): EmbedBuilder {
-  return new EmbedBuilder()
-    .setTitle("✅ Commission Request Submitted!")
-    .setDescription(
-      [
-        "Your commission request has been received!",
-        "",
-        "A private ticket has been created for you — check your channels. The team will review your request and get back to you soon.",
-      ].join("\n")
-    )
-    .setColor(0x2ecc71);
-}
-
-// ─── Edit modal (inline text edit for a single question) ─────────────────────
-
-export function buildEditModal(question: Question, currentAnswer: string): ModalBuilder {
-  const modal = new ModalBuilder()
-    .setCustomId(`edit_modal:${question.id}`)
-    .setTitle(question.prompt.length > 45 ? question.prompt.slice(0, 42) + "…" : question.prompt);
-
-  let placeholder = "Type your answer here…";
-  let style = TextInputStyle.Paragraph;
-
-  if (question.answerType.kind === "choice") {
-    const opts = question.answerType.options.map((o) => o.label).join(", ");
-    placeholder = `Choose one: ${opts}`.slice(0, 100);
-    style = TextInputStyle.Short;
-  } else if (question.answerType.kind === "dropdown") {
-    const opts = question.answerType.options.map((o) => o.label).join(", ");
-    placeholder = `Choose one: ${opts}`.slice(0, 100);
-    style = TextInputStyle.Short;
+  // ── Close / cancel keyword detection ────────────────────────────────────
+  const CLOSE_KEYWORDS = /^\s*(end|close|cancel)\s*$/i;
+  if (CLOSE_KEYWORDS.test(message.content.trim())) {
+    await message.channel.send(buildCloseConfirmPayload());
+    return;
   }
 
-  const input = new TextInputBuilder()
-    .setCustomId("answer")
-    .setLabel(question.prompt.slice(0, 45))
-    .setStyle(style)
-    .setPlaceholder(placeholder)
-    .setRequired(true);
-
-  if (currentAnswer) input.setValue(currentAnswer.slice(0, 4000));
-  modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
-  return modal;
-}
-
-// ─── Custom-answer modals for specific questions ──────────────────────────────
-
-const CUSTOM_MODAL_META: Record<string, { title: string; label: string; style: TextInputStyle; minLength?: number; maxLength?: number }> = {
-  contactMethodOther: { title: "Contact Method",       label: "Platform & handle",               style: TextInputStyle.Short,     maxLength: 200 },
-  commissionTypeCustom: { title: "Commission Type",    label: "Describe the UI you need",         style: TextInputStyle.Paragraph, minLength: 20, maxLength: 500 },
-  deadlineCustom:     { title: "Specific Deadline",    label: "Target date or deadline",          style: TextInputStyle.Short,     minLength: 5, maxLength: 200 },
-  budgetUSD:          { title: "USD Budget",           label: "Amount & payment method",          style: TextInputStyle.Short,     maxLength: 200 },
-  assetDetails:       { title: "Your Assets",          label: "Describe & how you'll share them", style: TextInputStyle.Paragraph, maxLength: 500 },
-};
-
-export const MODAL_QUESTION_IDS = new Set(Object.keys(CUSTOM_MODAL_META));
-
-export function buildCustomAnswerModal(question: Question): ModalBuilder {
-  const meta = CUSTOM_MODAL_META[question.id] ?? {
-    title: question.prompt.slice(0, 45),
-    label: question.prompt.slice(0, 45),
-    style: TextInputStyle.Paragraph,
-  };
-  const modal = new ModalBuilder()
-    .setCustomId(`q_custom_modal:${question.id}`)
-    .setTitle(meta.title);
-  const input = new TextInputBuilder()
-    .setCustomId("value")
-    .setLabel(meta.label.slice(0, 45))
-    .setStyle(meta.style)
-    .setRequired(true);
-  if (meta.minLength) input.setMinLength(meta.minLength);
-  if (meta.maxLength) input.setMaxLength(meta.maxLength);
-  modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
-  return modal;
-}
-
-// ─── Step 4 — UI Elements multi-page modal ───────────────────────────────────
-
-export function buildUiElementsModalPage1(): ModalBuilder {
-  const modal = new ModalBuilder()
-    .setCustomId("ui_elements_modal:page1")
-    .setTitle("UI Elements — Page 1 of 2");
-
-  const fields = [
-    { id: "main_menu",   label: "Main Menu (buttons + frames needed)",   placeholder: "e.g. Play button, Settings button, Title frame" },
-    { id: "hud",         label: "HUD (heads-up display elements)",        placeholder: "e.g. Health bar frame, XP bar, coin counter" },
-    { id: "shop",        label: "Shop / Store (buttons + frames)",        placeholder: "e.g. Buy button, Item frame, Currency display" },
-    { id: "inventory",   label: "Inventory (buttons + frames)",           placeholder: "e.g. Item slot frames, Equip button, Close button" },
-    { id: "settings",    label: "Settings Menu (buttons + frames)",       placeholder: "e.g. Volume slider frame, Toggle buttons, Back button" },
-  ];
-
-  for (const f of fields) {
-    modal.addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder()
-          .setCustomId(f.id)
-          .setLabel(f.label.slice(0, 45))
-          .setStyle(TextInputStyle.Paragraph)
-          .setPlaceholder(f.placeholder)
-          .setRequired(false)
-          .setMaxLength(500)
-      )
-    );
-  }
-  return modal;
-}
-
-export function buildUiElementsModalPage2(): ModalBuilder {
-  const modal = new ModalBuilder()
-    .setCustomId("ui_elements_modal:page2")
-    .setTitle("UI Elements — Page 2 of 2");
-
-  const fields = [
-    { id: "leaderboard", label: "Leaderboard (buttons + frames)",         placeholder: "e.g. Player row frames, Rank display, Close button" },
-    { id: "loading",     label: "Loading Screen (elements needed)",       placeholder: "e.g. Progress bar frame, Logo frame, Tips text" },
-    { id: "cutscene",    label: "Cutscene / Cinematic UI",                placeholder: "e.g. Dialogue box frame, Skip button, Name label" },
-    { id: "notifications", label: "Notifications / Popups",               placeholder: "e.g. Alert frame, Confirm button, Dismiss button" },
-    { id: "other",       label: "Other / Custom Elements",                placeholder: "e.g. Anything else not listed above" },
-  ];
-
-  for (const f of fields) {
-    modal.addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder()
-          .setCustomId(f.id)
-          .setLabel(f.label.slice(0, 45))
-          .setStyle(TextInputStyle.Paragraph)
-          .setPlaceholder(f.placeholder)
-          .setRequired(false)
-          .setMaxLength(500)
-      )
-    );
-  }
-  return modal;
-}
-
-export function buildUiElementsAfterAnswerRow(page: 1 | 2): ActionRowBuilder<ButtonBuilder> {
-  const buttons = [
-    new ButtonBuilder()
-      .setCustomId("ui_elements:edit")
-      .setLabel("Edit")
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji("✏️"),
-    new ButtonBuilder()
-      .setCustomId("ui_elements:next")
-      .setLabel("Next →")
-      .setStyle(ButtonStyle.Success)
-      .setEmoji("➡️"),
-  ];
-
-  if (page === 1) {
-    buttons.splice(1, 0,
-      new ButtonBuilder()
-        .setCustomId("ui_elements:page2")
-        .setLabel("Page 2")
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji("📄")
-    );
-  }
-
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
-}
-
-
-
-export function buildReviewEditModal(session: SavedApplication, page: number): ModalBuilder {
   const questions = getQuestionsForRoles(session.roles, session.answers);
-  const start = page * 5;
-  const slice = questions.slice(start, start + 5);
 
-  const modal = new ModalBuilder()
-    .setCustomId(`review_edit_page:${page}`)
-    .setTitle(`Edit Answers — Page ${page + 1} of ${Math.ceil(questions.length / 5)}`);
+  const isEditing = session.step === "editing_from_review";
+  const currentIndex = isEditing
+    ? questions.findIndex((q) => q.id === session.editingQuestionId)
+    : session.currentQuestionIndex;
 
-  for (const q of slice) {
-    let placeholder = "Type your answer here…";
-    let style = TextInputStyle.Paragraph;
+  if (currentIndex < 0) return;
+  const currentQ = questions[currentIndex];
+  if (!currentQ) return;
 
-    if (q.answerType.kind === "choice") {
-      placeholder = q.answerType.options.map((o) => o.label).join(" / ").slice(0, 100);
-      style = TextInputStyle.Short;
-    } else if (q.answerType.kind === "dropdown") {
-      placeholder = q.answerType.options.map((o) => o.label).join(" / ").slice(0, 100);
-      style = TextInputStyle.Short;
-    }
+  // ── Reply-only enforcement ───────────────────────────────────────────────
+  const expectedMsgId = session.questionMessageIds?.[currentQ.id];
+  if (expectedMsgId && message.reference?.messageId !== expectedMsgId) return;
 
-    const label = q.prompt.length > 45 ? q.prompt.slice(0, 42) + "…" : q.prompt;
-    const current = session.answers[q.id] ?? "";
+  // Only handle text/image/media/link type questions via message
+  const kind = currentQ.answerType.kind;
+  if (kind !== "text" && kind !== "image" && kind !== "media" && kind !== "link") return;
 
-    const input = new TextInputBuilder()
-      .setCustomId(`review_field:${q.id}`)
-      .setLabel(label)
-      .setStyle(style)
-      .setPlaceholder(placeholder)
-      .setRequired(false);
+  let answer = message.content.trim();
 
-    if (current) input.setValue(current.slice(0, 4000));
-    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+  // Handle media/image attachments
+  if (kind === "image" || kind === "media") {
+    const attachments = [...message.attachments.values()];
+    const urls = attachments.map((a) => a.url);
+    if (answer) urls.push(answer);
+    answer = urls.join("\n") || answer;
   }
 
-  return modal;
-}
+  // Handle optional questions with N/A
+  if (!answer) {
+    if ((currentQ.answerType as any).optional) {
+      answer = "N/A";
+    } else {
+      return;
+    }
+  }
 
-// ─── Ask a question ───────────────────────────────────────────────────────────
+  // ── Character limit validation ────────────────────────────────────────────
+  if (kind === "text" && answer !== "N/A") {
+    const type = currentQ.answerType as { kind: "text"; minLength?: number; maxLength?: number; optional?: boolean };
+    if (type.minLength && answer.length < type.minLength) {
+      await message.reply({
+        content: `⚠️ Your answer is too short! Please write at least **${type.minLength}** characters (you wrote **${answer.length}**).`,
+      }).catch(() => {});
+      return;
+    }
+    if (type.maxLength && answer.length > type.maxLength) {
+      await message.reply({
+        content: `⚠️ Your answer is too long! Please keep it under **${type.maxLength}** characters (you wrote **${answer.length}**).`,
+      }).catch(() => {});
+      return;
+    }
+  }
 
-export async function askQuestion(
-  channel: DMChannel,
-  question: Question,
-  index: number,
-  total: number,
-  session?: SavedApplication
-): Promise<Message> {
-  if (session) {
-    session.questionStartedAt = Date.now();
+  // Handle media collection (acceptMedia) — multi-upload flow
+  if (kind === "text" && (currentQ.answerType as any).acceptMedia) {
+    const attachments = [...message.attachments.values()];
+    if (attachments.length > 0) {
+      const existing = session.answers[currentQ.id] ? session.answers[currentQ.id].split("\n") : [];
+      const newItems = attachments.map((a) => a.url);
+      if (answer && !attachments.some((a) => a.url === answer)) newItems.unshift(answer);
+      const combined = [...existing, ...newItems];
+      session.answers[currentQ.id] = combined.join("\n");
+      updateSession(session);
+
+      if (combined.length < 5) {
+        await sendPortfolioAddMorePrompt(message.channel as any, combined.length);
+        return;
+      }
+      answer = combined.join("\n");
+    }
+  }
+
+  // ── Reference question: image or URL only ────────────────────────────────
+  if (currentQ.id === "reference") {
+    const hasAttachment = message.attachments.size > 0;
+    const isUrl = /^https?:\/\//i.test(answer);
+    if (!hasAttachment && !isUrl) {
+      await message.reply({ content: "⚠️ You must provide an image or link reference." }).catch(() => {});
+      return;
+    }
+  }
+
+  session.answers[currentQ.id] = answer;
+
+  // ── Edit the original question message in-place ───────────────────────────
+  const msgId = session.questionMessageIds?.[currentQ.id];
+  if (msgId) {
+    await updateQuestionToAnswered(message.channel as any, msgId, currentQ, answer, currentIndex, questions.length);
+  }
+
+  if (isEditing) {
+    session.step = "review";
+    session.editingQuestionId = undefined;
+    updateSession(session);
+    const msg = await sendReviewEmbed(message.channel as any, session, !session.finalEditUsed);
+    session.reviewMessageId = msg.id;
+    updateSession(session);
+    return;
+  }
+
+  const next = currentIndex + 1;
+  if (next >= questions.length) {
+    session.step = "review";
+    updateSession(session);
+    const msg = await sendReviewEmbed(message.channel as any, session, !session.finalEditUsed);
+    session.reviewMessageId = msg.id;
+    updateSession(session);
+  } else {
+    session.currentQuestionIndex = next;
+    updateSession(session);
+    const q = questions[next]!;
+    const msgOut = await askQuestion(message.channel as any, q, next, questions.length, session);
+    if (!session.questionMessageIds) session.questionMessageIds = {};
+    session.questionMessageIds[q.id] = msgOut.id;
     updateSession(session);
   }
-
-  const type = question.answerType;
-
-  // Build description with clear spacing
-  const descParts: string[] = [];
-  descParts.push(question.prompt);
-  descParts.push(""); // blank line for spacing
-
-  // Add character limit info for text questions
-  if (type.kind === "text") {
-    const limits: string[] = [];
-    if (type.minLength) limits.push(`Minimum: **${type.minLength}** characters`);
-    if (type.maxLength) limits.push(`Maximum: **${type.maxLength}** characters`);
-    if (limits.length > 0) descParts.push(`📏 ${limits.join(" · ")}`);
-    if (type.optional) descParts.push("*This question is optional — type **N/A** to skip*");
-  }
-
-  // Reply instruction for text-type questions
-  if (type.kind === "text" || type.kind === "image" || type.kind === "media" || type.kind === "link") {
-    descParts.push("");
-    descParts.push("💬 **Type your answer below ↓**");
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle(`📝 Question ${index + 1} of ${total}`)
-    .setDescription(descParts.join("\n"))
-    .setColor(0x9b59b6)
-    .setFooter({ text: getHint(question) });
-
-  const components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
-
-  if (type.kind === "choice") {
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      type.options.map((opt) => {
-        const btn = new ButtonBuilder()
-          .setCustomId(`q_choice:${question.id}:${opt.value}`)
-          .setLabel(opt.label)
-          .setStyle(ButtonStyle.Secondary);
-        if (opt.emoji) btn.setEmoji(opt.emoji);
-        return btn;
-      })
-    );
-    components.push(row);
-  } else if (type.kind === "dropdown") {
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`q_select:${question.id}`)
-      .setPlaceholder("Select an option…")
-      .addOptions(type.options);
-    if (type.minValues !== undefined) select.setMinValues(type.minValues);
-    if (type.maxValues !== undefined) select.setMaxValues(type.maxValues);
-    components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select));
-  }
-
-  return await channel.send({ embeds: [embed], components });
-}
-
-function getHint(question: Question): string {
-  const type = question.answerType;
-  switch (type.kind) {
-    case "text":     return type.optional ? "Type your answer or N/A to skip, then send" : "Type your answer in this DM and send";
-    case "image":    return "Send a message with an image attached";
-    case "media":    return "Attach images and/or paste links, then send";
-    case "link":     return "Paste a URL (https://...) and send";
-    case "choice":   return "Click a button above to answer";
-    case "dropdown": return "Select from the dropdown above to answer";
-  }
-}
-
-// ─── Review embed ─────────────────────────────────────────────────────────────
-
-export async function sendReviewEmbed(channel: DMChannel, session: SavedApplication, showEditButton: boolean): Promise<Message> {
-  const questions = getQuestionsForRoles(session.roles, session.answers);
-  const lines = questions.map((q, i) => {
-    const raw = session.answers[q.id] || "";
-    const answer = raw ? resolveAnswerLabel(q, raw) : "*No answer*";
-    return `**${i + 1}.** ${q.prompt}\n> ${answer}`;
-  });
-  const description = lines.join("\n\n");
-  const truncated = description.length > 4000 ? description.slice(0, 3997) + "..." : description;
-
-  const embed = new EmbedBuilder()
-    .setTitle("📋 Review Your Commission Request")
-    .setDescription(truncated)
-    .setColor(0x9b59b6)
-    .setFooter({ text: "Check your answers before submitting" });
-
-  const buttons: ButtonBuilder[] = [
-    new ButtonBuilder().setCustomId("review:submit").setLabel("Submit Request").setStyle(ButtonStyle.Success).setEmoji("📩"),
-    new ButtonBuilder().setCustomId("review:cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger).setEmoji("🗑️"),
-  ];
-
-  if (showEditButton) {
-    buttons.push(new ButtonBuilder().setCustomId("review:edit").setLabel("Edit").setStyle(ButtonStyle.Primary).setEmoji("✏️"));
-  }
-
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
-  return await channel.send({ embeds: [embed], components: [row] });
-}
-
-export async function sendReviewEditSelect(channel: DMChannel, session: SavedApplication): Promise<void> {
-  const questions = getQuestionsForRoles(session.roles, session.answers);
-  const options = questions.map((q, i) => ({
-    label: `${i + 1}. ${q.prompt.slice(0, 90)}`,
-    value: q.id,
-    description: (session.answers[q.id] ?? "No answer").slice(0, 100),
-  }));
-  const select = new StringSelectMenuBuilder()
-    .setCustomId("review_edit_select")
-    .setPlaceholder("Select a question to edit…")
-    .addOptions(options.slice(0, 25));
-  const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
-  const embed = new EmbedBuilder().setDescription("Which question would you like to edit?").setColor(0x9b59b6);
-  await channel.send({ embeds: [embed], components: [row] });
-}
-
-// ─── Portfolio (media collection) ─────────────────────────────────────────────
-
-export async function sendPortfolioAddMorePrompt(channel: DMChannel, count: number, maxCount = 5): Promise<Message> {
-  const embed = new EmbedBuilder()
-    .setTitle(`✅ Reference ${count}/${maxCount} Added!`)
-    .setDescription(
-      count >= maxCount
-        ? "You've reached the maximum of 5 references. Moving to the next question…"
-        : "Send another image or link to add more, or click **Done** when you're finished."
-    )
-    .setColor(0x2ecc71);
-
-  if (count >= maxCount) return await channel.send({ embeds: [embed] });
-
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId("portfolio:done").setLabel("Done Adding References").setStyle(ButtonStyle.Success).setEmoji("✅")
-  );
-  return await channel.send({ embeds: [embed], components: [row] });
-}
-
-// ─── Submit — create ticket channel ──────────────────────────────────────────
-
-export async function submitApplication(session: SavedApplication, client: Client): Promise<void> {
-  session.step = "submitted";
-  updateSession(session);
-
-  const guild = client.guilds.cache.first();
-  if (!guild) return;
-
-  const questions = getQuestionsForRoles(session.roles, session.answers);
-  const now = Math.floor(Date.now() / 1000);
-
-  // ── Find or fall back to the ticket category ──────────────────────────────
-  const categoryId = config.ticketCategoryId;
-  const category = categoryId ? guild.channels.cache.get(categoryId) : null;
-
-  // ── Create private ticket channel ─────────────────────────────────────────
-  const applicant = await guild.members.fetch(session.userId).catch(() => null);
-  const channelName = `commission-${applicant?.user.username ?? session.userId}`.slice(0, 100).toLowerCase().replace(/[^a-z0-9-]/g, "-");
-
-  const ticketChannel = await guild.channels.create({
-    name: channelName,
-    type: ChannelType.GuildText,
-    parent: category?.id ?? undefined,
-    permissionOverwrites: [
-      // Deny @everyone
-      {
-        id: guild.roles.everyone.id,
-        deny: [PermissionFlagsBits.ViewChannel],
-      },
-      // Allow the applicant
-      {
-        id: session.userId,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-          PermissionFlagsBits.AttachFiles,
-        ],
-      },
-      // Allow admins (anyone with ManageGuild)
-      ...(guild.roles.cache
-        .filter((r) => r.permissions.has(PermissionFlagsBits.ManageGuild))
-        .map((r) => ({
-          id: r.id,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory,
-            PermissionFlagsBits.ManageMessages,
-            PermissionFlagsBits.AttachFiles,
-          ],
-        }))),
-    ],
-  }).catch(() => null);
-
-  if (!ticketChannel || ticketChannel.type !== ChannelType.GuildText) return;
-
-  // ── Build the application embed ───────────────────────────────────────────
-  const embed = new EmbedBuilder()
-    .setTitle("🎨 New UI Commission Request")
-    .setColor(0x9b59b6)
-    .setTimestamp();
-
-  embed.addFields({ name: "Applicant", value: `<@${session.userId}>`, inline: true });
-  embed.addFields({ name: "Submitted", value: `<t:${now}:F>`, inline: true });
-
-  for (const q of questions) {
-    const raw = session.answers[q.id] ?? "";
-    const display = raw ? resolveAnswerLabel(q, raw) : "*No answer*";
-    embed.addFields({
-      name: q.prompt.length > 256 ? q.prompt.slice(0, 253) + "…" : q.prompt,
-      value: display.length > 1024 ? display.slice(0, 1021) + "…" : display,
-    });
-  }
-
-  // ── Close button ──────────────────────────────────────────────────────────
-  const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`ticket:close:${session.userId}`)
-      .setLabel("Close Ticket")
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji("🔒")
-  );
-
-  const ticketMsg = await ticketChannel.send({
-    content: `<@${session.userId}> Your commission request has been received! The team will review it and get back to you here.`,
-    embeds: [embed],
-    components: [closeRow],
-  }).catch(() => null);
-
-  if (ticketMsg) {
-    session.logMessageId = ticketMsg.id;
-    session.logChannelId = ticketChannel.id;
-    updateSession(session);
-  }
-
-  // ── Also ping the log channel if configured ───────────────────────────────
-  if (config.logChannelId) {
-    const logChannel = await guild.channels.fetch(config.logChannelId).catch(() => null);
-    if (logChannel && logChannel.type === ChannelType.GuildText) {
-      const summaryEmbed = new EmbedBuilder()
-        .setTitle("📋 New Commission Request")
-        .setDescription(
-          [
-            `**Applicant:** <@${session.userId}>`,
-            `**Ticket:** <#${ticketChannel.id}>`,
-            `**Submitted:** <t:${now}:F>`,
-          ].join("\n")
-        )
-        .setColor(0x9b59b6)
-        .setTimestamp();
-      await logChannel.send({ content: `<@${config.ownerId}>`, embeds: [summaryEmbed] }).catch(() => {});
-    }
-  }
-}
-
-// ─── Resume after bot restart ─────────────────────────────────────────────────
-
-export async function resumeStep(channel: DMChannel, session: SavedApplication): Promise<void> {
-  const fresh = await getSession(session.userId);
-  const s = fresh ?? session;
-
-  switch (s.step) {
-    case "pending_start":
-      await sendStartPrompt(channel);
-      break;
-    case "answering": {
-      const questions = getQuestionsForRoles(s.roles, s.answers);
-      const current = questions[s.currentQuestionIndex];
-      if (current) {
-        const msg = await askQuestion(channel, current, s.currentQuestionIndex, questions.length, s);
-        if (!s.questionMessageIds) s.questionMessageIds = {};
-        s.questionMessageIds[current.id] = msg.id;
-        updateSession(s);
-      }
-      break;
-    }
-    case "review":
-      await sendReviewEmbed(channel, s, !s.finalEditUsed);
-      break;
-    case "editing_from_review": {
-      if (s.editingQuestionId) {
-        const questions = getQuestionsForRoles(s.roles, s.answers);
-        const qIndex = questions.findIndex((q) => q.id === s.editingQuestionId);
-        if (qIndex >= 0) {
-          const msg = await askQuestion(channel, questions[qIndex]!, qIndex, questions.length, s);
-          if (!s.questionMessageIds) s.questionMessageIds = {};
-          s.questionMessageIds[questions[qIndex]!.id] = msg.id;
-          updateSession(s);
-        }
-      }
-      break;
-    }
-  }
-}
-
-// ─── Stub exports kept for handler compatibility ──────────────────────────────
-// (Handlers import these — they are no-ops in the commission flow.)
-
-export async function sendNicknameSelectionDM(_channel: DMChannel, _robloxUsername: string, _robloxDisplayName: string): Promise<void> {}
-
-export async function sendVerificationChannelMessage(channel: TextChannel): Promise<Message> {
-  return channel.send({ content: "Verification is not used in the commission flow." });
-}
-
-export function buildRevisionEditModal(session: SavedApplication, flaggedQuestions: Question[]): ModalBuilder {
-  // Minimal implementation — revision flow is unused for commissions.
-  const modal = new ModalBuilder().setCustomId("revision_edit_modal").setTitle("Fix Flagged Answers");
-  const slice = flaggedQuestions.slice(0, 5);
-  for (const q of slice) {
-    const label = q.prompt.length > 45 ? q.prompt.slice(0, 42) + "…" : q.prompt;
-    const input = new TextInputBuilder()
-      .setCustomId(`revision_field:${q.id}`)
-      .setLabel(label)
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder("Type your updated answer here…")
-      .setRequired(true);
-    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
-  }
-  return modal;
-}
-
-export async function sendReviewNeedsRevisionEmbed(
-  channel: DMChannel,
-  session: SavedApplication,
-  issues: string,
-  showSubmit: boolean
-): Promise<Message> {
-  const embed = new EmbedBuilder()
-    .setTitle("⚠️ Request Needs Revision")
-    .setDescription(`Please review the following:\n\n${issues}`)
-    .setColor(0xe67e22);
-  const buttons: ButtonBuilder[] = [
-    new ButtonBuilder().setCustomId("review:edit_revision").setLabel("Edit").setStyle(ButtonStyle.Primary).setEmoji("✏️"),
-  ];
-  if (showSubmit) {
-    buttons.push(new ButtonBuilder().setCustomId("review:submit").setLabel("Submit").setStyle(ButtonStyle.Success).setEmoji("📩"));
-  }
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
-  return await channel.send({ embeds: [embed], components: [row] });
-}
-
-// ─── Role-selection stubs (not used in commission flow) ───────────────────────
-
-export async function sendRoleSelect1(_channel: DMChannel, _robloxUsername?: string, _guild?: Guild): Promise<void> {}
-export async function sendRoleSelect2(_channel: DMChannel, _excludeRoles: string[], _guild?: Guild): Promise<void> {}
-export async function sendRoleConfirm(_channel: DMChannel, _selectedRole: string): Promise<void> {}
-export function buildRoleConfirmPayload(_roleKey: string): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
-  return { embeds: [], components: [] };
-}
-export function buildRoleSelectedPayload(_roleKey: string): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
-  return { embeds: [], components: [] };
-}
-export async function buildRoleSelect1Payload(_robloxUsername?: string, _guild?: Guild): Promise<{ embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } | null> {
-  return null;
-}
-
-// Roblox verification stubs
-export async function sendUsernamePrompt(_channel: DMChannel): Promise<void> {}
-export async function sendUsernameConfirm(_channel: DMChannel, _username: string): Promise<void> {}
-export async function sendGroupJoinPrompt(_channel: DMChannel, _username: string): Promise<Message> {
-  return _channel.send({ content: "Not used." });
-}
-export async function sendBioVerification(_channel: DMChannel, _code: string, _username: string): Promise<Message> {
-  return _channel.send({ content: "Not used." });
-}
-export async function sendPaymentExplanationEmbed(_channel: DMChannel): Promise<Message> {
-  return _channel.send({ content: "Not used." });
 }
