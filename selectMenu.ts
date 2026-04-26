@@ -1,0 +1,103 @@
+import { type StringSelectMenuInteraction, ChannelType } from "discord.js";
+import { getSession, updateSession } from "./data.js";
+import { getQuestionsForRoles } from "./questions.js";
+import {
+  askQuestion,
+  sendReviewEmbed,
+  buildCustomAnswerModal,
+  MODAL_QUESTION_IDS,
+} from "./flows.js";
+
+export async function handleSelectMenu(interaction: StringSelectMenuInteraction): Promise<void> {
+  const { customId, user, values } = interaction;
+
+  // ── q_select — dropdown question answer ───────────────────────────────────
+  if (customId.startsWith("q_select:")) {
+    const questionId = customId.slice(9);
+    const session = getSession(user.id);
+    if (!session || !questionId) return;
+
+    session.answers[questionId] = values.join(", ");
+
+    const questions = getQuestionsForRoles(session.roles, session.answers);
+
+    // Check if next question is a modal-triggered one
+    const nextIndex = session.step === "editing_from_review"
+      ? questions.findIndex((q) => q.id === session.editingQuestionId) + 1
+      : session.currentQuestionIndex + 1;
+
+    const nextQ = questions[nextIndex];
+    if (nextQ && MODAL_QUESTION_IDS.has(nextQ.id)) {
+      session.currentQuestionIndex = nextIndex;
+      updateSession(session);
+      await interaction.showModal(buildCustomAnswerModal(nextQ));
+      return;
+    }
+
+    updateSession(session);
+
+    if (session.step === "editing_from_review") {
+      session.step = "review";
+      session.editingQuestionId = undefined;
+      updateSession(session);
+      await interaction.deferUpdate();
+      const dm = await user.createDM();
+      const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
+      session.reviewMessageId = msg.id;
+      updateSession(session);
+      return;
+    }
+
+    const next = session.currentQuestionIndex + 1;
+    if (next >= questions.length) {
+      session.step = "review";
+      updateSession(session);
+      await interaction.deferUpdate();
+      const dm = await user.createDM();
+      const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
+      session.reviewMessageId = msg.id;
+      updateSession(session);
+    } else {
+      session.currentQuestionIndex = next;
+      updateSession(session);
+      await interaction.deferUpdate();
+      const dm = await user.createDM();
+      const q = questions[next]!;
+      const msgOut = await askQuestion(dm, q, next, questions.length, session);
+      if (!session.questionMessageIds) session.questionMessageIds = {};
+      session.questionMessageIds[q.id] = msgOut.id;
+      updateSession(session);
+    }
+    return;
+  }
+
+  // ── review_edit_select — pick a question to edit ──────────────────────────
+  if (customId === "review_edit_select") {
+    const session = getSession(user.id);
+    if (!session) return;
+
+    const questionId = values[0];
+    if (!questionId) return;
+
+    const questions = getQuestionsForRoles(session.roles, session.answers);
+    const q = questions.find((q) => q.id === questionId);
+    if (!q) return;
+
+    session.step = "editing_from_review";
+    session.editingQuestionId = questionId;
+    updateSession(session);
+
+    if (MODAL_QUESTION_IDS.has(questionId) || q.answerType.kind === "text") {
+      await interaction.showModal(buildCustomAnswerModal(q));
+    } else {
+      await interaction.deferUpdate();
+      const dm = await user.createDM();
+      const idx = questions.findIndex((q) => q.id === questionId);
+      const msg = await askQuestion(dm, q, idx, questions.length, session);
+      if (!session.questionMessageIds) session.questionMessageIds = {};
+      session.questionMessageIds[q.id] = msg.id;
+      updateSession(session);
+    }
+    return;
+  }
+}
