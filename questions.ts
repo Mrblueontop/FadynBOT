@@ -88,9 +88,9 @@ export const commissionQuestions: Question[] = [
     answerType: {
       kind: "dropdown",
       options: [
-        { label: "PayPal", value: "PayPal" },
+        { label: "PayPal (USD)", value: "PayPal" },
         { label: "Robux", value: "Robux" },
-        { label: "Other", value: "Other" },
+        { label: "Gift Card", value: "Gift Card" },
       ],
     },
   },
@@ -124,16 +124,18 @@ export const commissionQuestions: Question[] = [
     showIf: (a) => a["paymentMethod"] === "Robux",
   },
   {
-    id: "budgetOther",
-    prompt: "📝 **Step 10: Budget**\nSelect your budget arrangement:",
+    id: "budgetGiftCard",
+    prompt: "📝 **Step 10: Budget (Gift Card)**\nWhat is your budget in USD?",
     answerType: {
       kind: "dropdown",
       options: [
-        { label: "Negotiable", value: "Negotiable" },
-        { label: "Depends on project", value: "Depends on project" },
+        { label: "Under $5", value: "Under $5" },
+        { label: "$5 – $10", value: "$5-$10" },
+        { label: "$10 – $25", value: "$10-$25" },
+        { label: "$25+", value: "$25+" },
       ],
     },
-    showIf: (a) => a["paymentMethod"] === "Other",
+    showIf: (a) => a["paymentMethod"] === "Gift Card",
   },
   {
     id: "extraInfo",
