@@ -1,7 +1,7 @@
 import { type Message, ChannelType } from "discord.js";
 import { getSession, updateSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
-import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt } from "./flows.js";
+import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered } from "./flows.js";
 
 export async function handleMessage(message: Message): Promise<void> {
   // Only handle DMs
@@ -45,6 +45,23 @@ export async function handleMessage(message: Message): Promise<void> {
     }
   }
 
+  // ── Character limit validation ────────────────────────────────────────────
+  if (kind === "text" && answer !== "N/A") {
+    const type = currentQ.answerType as { kind: "text"; minLength?: number; maxLength?: number; optional?: boolean };
+    if (type.minLength && answer.length < type.minLength) {
+      await message.reply({
+        content: `⚠️ Your answer is too short! Please write at least **${type.minLength}** characters (you wrote **${answer.length}**).`,
+      }).catch(() => {});
+      return;
+    }
+    if (type.maxLength && answer.length > type.maxLength) {
+      await message.reply({
+        content: `⚠️ Your answer is too long! Please keep it under **${type.maxLength}** characters (you wrote **${answer.length}**).`,
+      }).catch(() => {});
+      return;
+    }
+  }
+
   // Handle media collection (acceptMedia) — multi-upload flow
   if (kind === "text" && (currentQ.answerType as any).acceptMedia) {
     const attachments = [...message.attachments.values()];
@@ -65,6 +82,12 @@ export async function handleMessage(message: Message): Promise<void> {
   }
 
   session.answers[currentQ.id] = answer;
+
+  // ── Edit the original question message in-place ───────────────────────────
+  const msgId = session.questionMessageIds?.[currentQ.id];
+  if (msgId) {
+    await updateQuestionToAnswered(message.channel as any, msgId, currentQ, answer, currentIndex, questions.length);
+  }
 
   if (isEditing) {
     session.step = "review";
