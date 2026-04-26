@@ -61,26 +61,8 @@ export const commissionQuestions: Question[] = [
     },
   },
   {
-    id: "uiElements",
-    prompt: "📝 **Step 6: UI Elements**\nSelect all that apply:",
-    answerType: {
-      kind: "dropdown",
-      options: [
-        { label: "Main Menu", value: "Main Menu" },
-        { label: "Settings", value: "Settings" },
-        { label: "Leaderboard", value: "Leaderboard" },
-        { label: "Shop", value: "Shop" },
-        { label: "Inventory", value: "Inventory" },
-        { label: "HUD", value: "HUD" },
-        { label: "Other", value: "Other" },
-      ],
-      minValues: 1,
-      maxValues: 7,
-    },
-  },
-  {
     id: "overallStyle",
-    prompt: "📝 **Step 7: Overall Style**\nSelect your preferred overall style:",
+    prompt: "📝 **Step 6: Overall Style**\nSelect your preferred overall style:",
     answerType: {
       kind: "dropdown",
       options: [
@@ -92,32 +74,17 @@ export const commissionQuestions: Question[] = [
   },
   {
     id: "colorScheme",
-    prompt: "📝 **Step 8: Color Scheme**\nWhat is your preferred color scheme? (fonts/branding optional)",
+    prompt: "📝 **Step 7: Color Scheme**\nWhat is your preferred color scheme? (fonts/branding optional)",
     answerType: { kind: "text", maxLength: 500 },
   },
   {
-    id: "framesNeeded",
-    prompt: "📝 **Step 9: Frames Needed**\nHow many frames do you need?",
-    answerType: {
-      kind: "dropdown",
-      options: [
-        { label: "1 frame", value: "1 frame" },
-        { label: "2–3 frames", value: "2-3 frames" },
-        { label: "4–6 frames", value: "4-6 frames" },
-        { label: "7–10 frames", value: "7-10 frames" },
-        { label: "10+ frames", value: "10+ frames" },
-        { label: "Not sure", value: "Not sure" },
-      ],
-    },
-  },
-  {
     id: "reference",
-    prompt: "📝 **Step 10: Reference**\nProvide a reference image link or description. Type N/A to skip.",
-    answerType: { kind: "text", optional: true, acceptMedia: true, maxLength: 800 },
+    prompt: "📝 **Step 8: Reference**\nProvide a reference image attachment or a valid image link (URL).",
+    answerType: { kind: "text", acceptMedia: true, maxLength: 800 },
   },
   {
     id: "paymentMethod",
-    prompt: "📝 **Step 11: Payment Method**\nHow will you be paying?",
+    prompt: "📝 **Step 9: Payment Method**\nHow will you be paying?",
     answerType: {
       kind: "dropdown",
       options: [
@@ -129,7 +96,7 @@ export const commissionQuestions: Question[] = [
   },
   {
     id: "budgetPaypal",
-    prompt: "📝 **Step 12: Budget (PayPal)**\nWhat is your budget?",
+    prompt: "📝 **Step 10: Budget (PayPal)**\nWhat is your budget?",
     answerType: {
       kind: "dropdown",
       options: [
@@ -143,7 +110,7 @@ export const commissionQuestions: Question[] = [
   },
   {
     id: "budgetRobux",
-    prompt: "📝 **Step 12: Budget (Robux)**\nWhat is your budget?",
+    prompt: "📝 **Step 10: Budget (Robux)**\nWhat is your budget?",
     answerType: {
       kind: "dropdown",
       options: [
@@ -158,7 +125,7 @@ export const commissionQuestions: Question[] = [
   },
   {
     id: "budgetOther",
-    prompt: "📝 **Step 12: Budget**\nSelect your budget arrangement:",
+    prompt: "📝 **Step 10: Budget**\nSelect your budget arrangement:",
     answerType: {
       kind: "dropdown",
       options: [
@@ -170,7 +137,7 @@ export const commissionQuestions: Question[] = [
   },
   {
     id: "extraInfo",
-    prompt: "📝 **Step 13: Extra Info**\nAny notes, deadlines, or special requests. Type N/A to skip.",
+    prompt: "📝 **Step 11: Extra Info**\nAny notes, deadlines, or special requests. Type N/A to skip.",
     answerType: { kind: "text", optional: true, maxLength: 1000 },
   },
 ];
