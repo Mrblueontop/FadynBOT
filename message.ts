@@ -52,6 +52,10 @@ export async function handleMessage(message: Message): Promise<void> {
     if ((currentQ.answerType as any).optional) {
       answer = "N/A";
     } else {
+      // Required — reject empty answers
+      await message.reply({
+        content: "⚠️ This field is required. Please provide an answer before continuing.",
+      }).catch(() => {});
       return;
     }
   }
@@ -73,7 +77,7 @@ export async function handleMessage(message: Message): Promise<void> {
     }
   }
 
-  // Handle media collection (acceptMedia) — multi-upload flow
+  // Handle media collection (acceptMedia) — multi-upload flow (references + assets)
   if (kind === "text" && (currentQ.answerType as any).acceptMedia) {
     const attachments = [...message.attachments.values()];
     if (attachments.length > 0) {
@@ -92,12 +96,26 @@ export async function handleMessage(message: Message): Promise<void> {
     }
   }
 
-  // ── Reference question: image or URL only ────────────────────────────────
+  // ── Reference question: image or URL required ─────────────────────────────
   if (currentQ.id === "reference") {
     const hasAttachment = message.attachments.size > 0;
     const isUrl = /^https?:\/\//i.test(answer);
     if (!hasAttachment && !isUrl) {
-      await message.reply({ content: "⚠️ You must provide an image or link reference." }).catch(() => {});
+      await message.reply({
+        content: "⚠️ A reference is required. Please upload an image or paste a direct image/link URL.",
+      }).catch(() => {});
+      return;
+    }
+  }
+
+  // ── Assets question: require image or URL if they said Yes ───────────────
+  if (currentQ.id === "assetFiles") {
+    const hasAttachment = message.attachments.size > 0;
+    const isUrl = /^https?:\/\//i.test(answer);
+    if (!hasAttachment && !isUrl) {
+      await message.reply({
+        content: "⚠️ Please upload an image/file or paste a direct URL for your assets.",
+      }).catch(() => {});
       return;
     }
   }
@@ -114,7 +132,7 @@ export async function handleMessage(message: Message): Promise<void> {
     session.step = "review";
     session.editingQuestionId = undefined;
     updateSession(session);
-    const msg = await sendReviewEmbed(message.channel as any, session, !session.finalEditUsed);
+    const msg = await sendReviewEmbed(message.channel as any, session);
     session.reviewMessageId = msg.id;
     updateSession(session);
     return;
@@ -124,7 +142,7 @@ export async function handleMessage(message: Message): Promise<void> {
   if (next >= questions.length) {
     session.step = "review";
     updateSession(session);
-    const msg = await sendReviewEmbed(message.channel as any, session, !session.finalEditUsed);
+    const msg = await sendReviewEmbed(message.channel as any, session);
     session.reviewMessageId = msg.id;
     updateSession(session);
   } else {
