@@ -2,13 +2,19 @@ import { type ModalSubmitInteraction, EmbedBuilder } from "discord.js";
 import { getSession, updateSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
 import { askQuestion, sendReviewEmbed, buildUiElementsAfterAnswerRow, updateQuestionToAnswered } from "./flows.js";
+import { moderateUiElements, buildUiElementsModerationWarning } from "./moderation.js";
 
 export async function handleModal(interaction: ModalSubmitInteraction): Promise<void> {
   const { customId, user } = interaction;
 
   // ── Step 4: UI elements (single modal, 2 fields) ─────────────────────────
   // customId is "ui_elements_modal:main" (buildUiElementsModal in flows.ts)
-  if (customId === "ui_elements_modal:main" || customId === "ui_elements_modal:page1" || customId === "ui_elements_modal:page2") {
+  // Also catches legacy aliases page1 / page2 just in case
+  if (
+    customId === "ui_elements_modal:main" ||
+    customId === "ui_elements_modal:page1" ||
+    customId === "ui_elements_modal:page2"
+  ) {
     const session = getSession(user.id);
     if (!session) return;
 
@@ -17,14 +23,23 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     try { buttonsVal = interaction.fields.getTextInputValue("buttons_needed").trim(); } catch {}
     try { framesVal = interaction.fields.getTextInputValue("frames_needed").trim(); } catch {}
 
+    // ── AI validation ─────────────────────────────────────────────────────
+    const modResult = await moderateUiElements(buttonsVal, framesVal);
+    if (!modResult.passed) {
+      // Send warning embed with Edit + Cancel buttons — do NOT save the bad answer
+      await interaction.reply(buildUiElementsModerationWarning(modResult));
+      return;
+    }
+
+    // ── Save valid answer ─────────────────────────────────────────────────
     const parts: string[] = [];
     if (buttonsVal) parts.push(`Buttons Needed: ${buttonsVal}`);
-    if (framesVal) parts.push(`Frames Needed: ${framesVal}`);
+    if (framesVal)  parts.push(`Frames Needed: ${framesVal}`);
 
     session.answers["uiRequirementType"] = parts.join("\n");
     updateSession(session);
 
-    const summary = parts.length > 0 ? parts.join("\n") : "*Nothing filled in yet.*";
+    const summary = parts.join("\n");
 
     // Edit the original Step 4 question message in-place
     const dm = await user.createDM();
