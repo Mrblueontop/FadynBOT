@@ -222,6 +222,56 @@ export async function updateQuestionToAnswered(
   }
 }
 
+// ─── Update Step 4 to answered (keeps Edit button, no Next) ──────────────────
+
+/**
+ * Edits the Step 4 (UI Frames Needed) question message in-place after a valid
+ * modal submission. Shows the answer in green and keeps an Edit button so the
+ * user can reopen the modal, but does NOT show a Next button — advancing is
+ * handled by the ui_elements:next button which is no longer rendered here.
+ * Instead the user clicks Edit to change, or the flow auto-advances via modal.ts.
+ */
+export async function updateStep4ToAnswered(
+  channel: AnyChannel,
+  messageId: string,
+  answer: string,
+  index: number,
+  total: number
+): Promise<void> {
+  try {
+    const msg = await channel.messages.fetch(messageId);
+
+    const embed = new EmbedBuilder()
+      .setDescription(
+        [
+          "📝 **Step 4: UI Frames Needed**",
+          "Your UI elements have been saved. Click **Edit** if you need to change anything, then continue with the next question.",
+        ].join("\n")
+      )
+      .setColor(0x2ecc71)
+      .addFields({ name: "✅ Your answer", value: truncate(answer, 1024), inline: false })
+      .setFooter({ text: `Question ${index + 1} of ${total} — answered` });
+
+    const editBtn = new ButtonBuilder()
+      .setCustomId("ui_elements:edit")
+      .setLabel("Edit")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("✏️");
+
+    const nextBtn = new ButtonBuilder()
+      .setCustomId("ui_elements:next")
+      .setLabel("Next Question")
+      .setStyle(ButtonStyle.Success)
+      .setEmoji("✅");
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(editBtn, nextBtn);
+
+    await msg.edit({ embeds: [embed], components: [row] });
+  } catch {
+    // Message deleted or too old — silently skip
+  }
+}
+
 // ─── Portfolio / asset "add more" prompt ──────────────────────────────────────
 
 export async function sendPortfolioAddMorePrompt(
