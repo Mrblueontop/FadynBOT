@@ -177,6 +177,12 @@ export async function askQuestion(
     });
   }
 
+  // ── Reference question: no buttons, special footer ────────────────────────
+  if (kind === "text" && (q.answerType as any).isReference) {
+    embed.setFooter({ text: `Question ${index + 1} of ${total} • Upload images/videos — type 'done' when finished` });
+    return channel.send({ embeds: [embed], components: [] });
+  }
+
   // ── Portfolio / asset done button ─────────────────────────────────────────
   if (kind === "text" && (q.answerType as any).acceptMedia) {
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -267,6 +273,51 @@ export async function updateStep4ToAnswered(
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(editBtn, nextBtn);
 
     await msg.edit({ embeds: [embed], components: [row] });
+  } catch {
+    // Message deleted or too old — silently skip
+  }
+}
+
+// ─── Update reference embed with current file count ───────────────────────────
+
+/**
+ * Edits the Step 8 (Reference) question embed in-place to reflect the current
+ * number of uploaded files.  Called every time the user uploads a new file.
+ */
+export async function updateReferenceEmbed(
+  channel: AnyChannel,
+  messageId: string,
+  index: number,
+  total: number,
+  fileCount: number
+): Promise<void> {
+  try {
+    const msg = await channel.messages.fetch(messageId);
+
+    const label = fileCount === 1 ? "1 file added" : `${fileCount} files added`;
+    const MAX_REF = 5;
+    const remaining = MAX_REF - fileCount;
+
+    const embed = new EmbedBuilder()
+      .setDescription(
+        [
+          "📝 **Step 8: Reference**",
+          "Upload images or videos that show the style you want — this is **required**.",
+          "",
+          "• Only image or video files are accepted (no YouTube links, etc.)",
+          `• You can upload up to **${MAX_REF} files**`,
+          "• Type **done** when you're finished",
+        ].join("\n")
+      )
+      .setColor(0x9b59b6)
+      .addFields({
+        name: "📎 Uploaded so far",
+        value: `**${label}** — ${remaining > 0 ? `${remaining} more allowed` : "limit reached, moving on…"}`,
+        inline: false,
+      })
+      .setFooter({ text: `Question ${index + 1} of ${total} • Upload images/videos — type 'done' when finished` });
+
+    await msg.edit({ embeds: [embed], components: [] });
   } catch {
     // Message deleted or too old — silently skip
   }
