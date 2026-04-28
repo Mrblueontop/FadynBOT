@@ -24,6 +24,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   type MessageCreateOptions,
+  type InteractionReplyOptions,
 } from "discord.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -330,7 +331,7 @@ export function buildModerationWarningPayload(
  */
 export function buildUiElementsModerationWarning(
   result: ModerationResult
-): MessageCreateOptions {
+): InteractionReplyOptions {
   const flagLines = result.flags.map(
     (f) => `> **${f.label}** — ${f.reason}`
   );
