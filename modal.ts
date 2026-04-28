@@ -211,29 +211,28 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     return;
   }
 
-  // ── review_edit_page — bulk edit answers from review page ─────────────────
-  if (customId.startsWith("review_edit_page:")) {
+  // ── moderation_fix_modal — apply fixes and rerun review ──────────────────
+  if (customId === "moderation_fix_modal") {
     const session = getSession(user.id);
     if (!session) return;
 
-    const questions = getQuestionsForRoles(session.roles, session.answers);
-    const page = parseInt(customId.slice(17), 10);
-    const start = page * 5;
-    const slice = questions.slice(start, start + 5);
+    const flags = (session as any).moderationFlags as { questionId: string; label: string }[] | undefined ?? [];
 
-    for (const q of slice) {
+    // Apply updated values for each flagged field
+    for (const flag of flags) {
       try {
-        const val = interaction.fields.getTextInputValue(`review_field:${q.id}`).trim();
-        if (val) session.answers[q.id] = val;
+        const val = interaction.fields.getTextInputValue(`fix_field:${flag.questionId}`).trim();
+        if (val) session.answers[flag.questionId] = val;
       } catch {}
     }
 
-    session.step = "review";
-    session.editingQuestionId = undefined;
+    // Clear stored flags — the review will re-moderate fresh
+    (session as any).moderationFlags = undefined;
     updateSession(session);
 
     await interaction.deferUpdate();
     const dm = await user.createDM();
+    // sendReviewEmbed will re-run moderation on the updated answers
     const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
     session.reviewMessageId = msg.id;
     updateSession(session);
