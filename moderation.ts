@@ -6,6 +6,9 @@
  * Call `moderateAnswers(answers)` inside sendReviewEmbed (before building the
  * embed) to catch gibberish, troll, or low-effort submissions.
  *
+ * Call `moderateUiElements(buttons, frames)` right after Step 4 is submitted
+ * to validate that the user entered real UI element names.
+ *
  * Returns a `ModerationResult`:
  *   - passed: true  → carry on as normal
  *   - passed: false → send a warning embed back to the user listing which
@@ -28,7 +31,7 @@ import {
 export interface ModerationFlag {
   questionId: string;
   label: string;
-  reason: string; // short human-readable reason
+  reason: string;
 }
 
 export interface ModerationResult {
@@ -77,6 +80,39 @@ Respond ONLY with valid JSON, no markdown fences, no extra text:
 }
 `.trim();
 
+// ─── UI Elements system prompt ────────────────────────────────────────────────
+
+const UI_ELEMENTS_SYSTEM_PROMPT = `
+You are a moderation assistant for a Roblox UI commission bot.
+Your job is to check if the "Buttons Needed" and "Frames Needed" fields
+from a commission form contain real, sensible Roblox UI element names.
+
+A valid answer contains real UI names such as:
+- Buttons: Play, Shop, Inventory, Settings, Back, Close, Confirm, etc.
+- Frames: Main Menu, HUD, Leaderboard, Shop Screen, Loading Screen, Cutscene, etc.
+
+Flag a field if it:
+- Is random keyboard mashing (e.g. "oo", "pp", "asd", "xyz", "qwerty")
+- Is a single letter or number (e.g. "a", "1", "x")
+- Contains words that are completely unrelated to UI elements
+- Is gibberish or a placeholder that doesn't describe actual UI components
+
+Do NOT flag:
+- Abbreviated but recognisable names (e.g. "inv" for inventory, "lb" for leaderboard)
+- Single valid UI names (e.g. buttons = "Play")
+- Creative game-specific UI names that still make sense in context
+- Fields that were left blank (blank = not provided, skip validation for that field)
+
+For EACH field provided, decide: pass or fail.
+Respond ONLY with valid JSON, no markdown fences, no extra text:
+{
+  "results": [
+    { "id": "<field_id>", "passed": true },
+    { "id": "<field_id>", "passed": false, "reason": "<short reason, max 80 chars>" }
+  ]
+}
+`.trim();
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -86,7 +122,6 @@ Respond ONLY with valid JSON, no markdown fences, no extra text:
 export async function moderateAnswers(
   answers: Record<string, string>
 ): Promise<ModerationResult> {
-  // Build a compact payload of only the fields we care about
   const toCheck = FIELDS_TO_CHECK
     .map((f) => ({ id: f.id, label: f.label, value: answers[f.id] ?? "" }))
     .filter((f) => f.value && f.value !== "N/A");
@@ -119,6 +154,78 @@ export async function moderateAnswers(
 
     if (!response.ok) {
       console.error(`[moderation] Groq error ${response.status}`);
+      return { passed: true, flags: [] };
+    }
+
+    const data = (await response.json()) as {
+      choices: { message: { content: string } }[];
+    };
+
+    const text = data.choices[0]?.message?.content ?? "";
+    return parseModerationResponse(text, FIELDS_TO_CHECK);
+  } catch (err) {
+    console.error("[moderation] fetch error:", err);
+    return { passed: true, flags: [] };
+  }
+}
+
+/**
+ * Validates Step 4 (UI Frames Needed) using AI.
+ * Checks that "buttons_needed" and "frames_needed" contain real UI element names.
+ *
+ * Pass the raw string values from the modal fields.
+ * Either can be an empty string (blank = skipped, not validated).
+ *
+ * Returns immediately with passed=true if Groq is unavailable (fail-open).
+ */
+export async function moderateUiElements(
+  buttonsVal: string,
+  framesVal: string
+): Promise<ModerationResult> {
+  const toCheck: { id: string; label: string; value: string }[] = [];
+  if (buttonsVal) toCheck.push({ id: "buttons_needed", label: "Buttons Needed", value: buttonsVal });
+  if (framesVal)  toCheck.push({ id: "frames_needed",  label: "Frames Needed",  value: framesVal });
+
+  // Both fields blank — treat as no input, fail the whole thing
+  if (toCheck.length === 0) {
+    return {
+      passed: false,
+      flags: [
+        {
+          questionId: "uiRequirementType",
+          label: "UI Frames Needed",
+          reason: "Please fill in at least one field — Buttons Needed or Frames Needed.",
+        },
+      ],
+    };
+  }
+
+  const userPrompt = [
+    "Please validate these UI element fields from a Roblox commission form:",
+    "",
+    ...toCheck.map((f) => `[${f.id}] ${f.label}: "${f.value}"`),
+  ].join("\n");
+
+  try {
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY ?? ""}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 256,
+        temperature: 0,
+        messages: [
+          { role: "system", content: UI_ELEMENTS_SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`[moderation] Groq UI check error ${response.status}`);
       return { passed: true, flags: [] }; // fail-open
     }
 
@@ -127,16 +234,25 @@ export async function moderateAnswers(
     };
 
     const text = data.choices[0]?.message?.content ?? "";
-    return parseModerationResponse(text);
+
+    const uiFields: { id: string; label: string }[] = [
+      { id: "buttons_needed", label: "Buttons Needed" },
+      { id: "frames_needed",  label: "Frames Needed" },
+    ];
+
+    return parseModerationResponse(text, uiFields);
   } catch (err) {
-    console.error("[moderation] fetch error:", err);
+    console.error("[moderation] UI elements fetch error:", err);
     return { passed: true, flags: [] }; // fail-open
   }
 }
 
 // ─── Response parser ──────────────────────────────────────────────────────────
 
-function parseModerationResponse(text: string): ModerationResult {
+function parseModerationResponse(
+  text: string,
+  fieldDefs: { id: string; label: string }[]
+): ModerationResult {
   try {
     const clean = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(clean) as {
@@ -147,7 +263,7 @@ function parseModerationResponse(text: string): ModerationResult {
 
     for (const result of parsed.results) {
       if (!result.passed) {
-        const field = FIELDS_TO_CHECK.find((f) => f.id === result.id);
+        const field = fieldDefs.find((f) => f.id === result.id);
         if (field) {
           flags.push({
             questionId: result.id,
@@ -161,15 +277,14 @@ function parseModerationResponse(text: string): ModerationResult {
     return { passed: flags.length === 0, flags };
   } catch {
     console.error("[moderation] Failed to parse response:", text);
-    return { passed: true, flags: [] }; // fail-open on parse error
+    return { passed: true, flags: [] };
   }
 }
 
-// ─── Warning embed builder ────────────────────────────────────────────────────
+// ─── Warning embed builders ───────────────────────────────────────────────────
 
 /**
- * Builds the warning message sent to the user when moderation fails.
- * Shows exactly which fields need fixing and why.
+ * Builds the warning message sent to the user when general moderation fails.
  */
 export function buildModerationWarningPayload(
   result: ModerationResult
@@ -195,6 +310,52 @@ export function buildModerationWarningPayload(
   const editBtn = new ButtonBuilder()
     .setCustomId("review:edit")
     .setLabel("Edit Answers")
+    .setStyle(ButtonStyle.Primary)
+    .setEmoji("✏️");
+
+  const cancelBtn = new ButtonBuilder()
+    .setCustomId("review:cancel")
+    .setLabel("Cancel Request")
+    .setStyle(ButtonStyle.Danger)
+    .setEmoji("✖️");
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(editBtn, cancelBtn);
+
+  return { embeds: [embed], components: [row] };
+}
+
+/**
+ * Builds the warning message shown to the user when Step 4 (UI elements) fails validation.
+ * Has an "Edit" button to reopen the modal and a "Cancel" button.
+ */
+export function buildUiElementsModerationWarning(
+  result: ModerationResult
+): MessageCreateOptions {
+  const flagLines = result.flags.map(
+    (f) => `> **${f.label}** — ${f.reason}`
+  );
+
+  const embed = new EmbedBuilder()
+    .setTitle("⚠️ Step 4: Invalid UI Elements")
+    .setDescription(
+      [
+        "The UI elements you entered don't look like real names. Please go back and enter actual button or frame names.",
+        "",
+        ...flagLines,
+        "",
+        "**Examples of valid answers:**",
+        "> Buttons: `Play, Shop, Inventory, Settings, Back`",
+        "> Frames: `Main Menu, HUD, Shop Screen, Leaderboard`",
+        "",
+        "Hit **Edit** to fix your answer.",
+      ].join("\n")
+    )
+    .setColor(0xe67e22)
+    .setFooter({ text: "Step 4 of 11 • Please enter real UI element names" });
+
+  const editBtn = new ButtonBuilder()
+    .setCustomId("ui_elements:edit")
+    .setLabel("Edit UI Elements")
     .setStyle(ButtonStyle.Primary)
     .setEmoji("✏️");
 
