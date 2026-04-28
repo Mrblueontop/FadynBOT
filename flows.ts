@@ -183,6 +183,12 @@ export async function askQuestion(
     return channel.send({ embeds: [embed], components: [] });
   }
 
+  // ── Asset upload question: no buttons, special footer ─────────────────────
+  if (kind === "text" && (q.answerType as any).isAssets) {
+    embed.setFooter({ text: `Question ${index + 1} of ${total} • Upload images/videos — type 'done' when finished, or 'skip' to continue` });
+    return channel.send({ embeds: [embed], components: [] });
+  }
+
   // ── Portfolio / asset done button ─────────────────────────────────────────
   if (kind === "text" && (q.answerType as any).acceptMedia) {
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -320,6 +326,98 @@ export async function updateReferenceEmbed(
     await msg.edit({ embeds: [embed], components: [] });
   } catch {
     // Message deleted or too old — silently skip
+  }
+}
+
+// ─── Update asset embed with current file count ───────────────────────────────
+
+/**
+ * Edits the Step 9b (Asset Upload) question embed in-place to reflect the
+ * current number of uploaded files.
+ */
+export async function updateAssetEmbed(
+  channel: AnyChannel,
+  messageId: string,
+  index: number,
+  total: number,
+  fileCount: number
+): Promise<void> {
+  try {
+    const msg = await channel.messages.fetch(messageId);
+
+    const label = fileCount === 1 ? "1 file added" : `${fileCount} files added`;
+    const MAX_ASSETS = 5;
+    const remaining = MAX_ASSETS - fileCount;
+
+    const embed = new EmbedBuilder()
+      .setDescription(
+        [
+          "📝 **Step 9b: Upload Your Assets**",
+          "Upload your assets (images, icons, logos, etc.) as file attachments.",
+          "",
+          "• Only image or video files are accepted",
+          `• You can upload up to **${MAX_ASSETS} files**`,
+          "• Type **done** when you're finished, or **skip** to continue without uploading",
+        ].join("\n")
+      )
+      .setColor(0x9b59b6)
+      .addFields({
+        name: "📎 Uploaded so far",
+        value: `**${label}** — ${remaining > 0 ? `${remaining} more allowed` : "limit reached, moving on…"}`,
+        inline: false,
+      })
+      .setFooter({ text: `Question ${index + 1} of ${total} • Upload images/videos — type 'done' when finished, or 'skip' to continue` });
+
+    await msg.edit({ embeds: [embed], components: [] });
+  } catch {
+    // Message deleted or too old — silently skip
+  }
+}
+
+/**
+ * Disables the Yes/No buttons on the hasAssets question message after the
+ * user clicks Yes, and updates the embed to show "Yes, I have assets" as
+ * the confirmed answer.
+ */
+export async function disableHasAssetsButtons(
+  channel: AnyChannel,
+  messageId: string,
+  index: number,
+  total: number
+): Promise<void> {
+  try {
+    const msg = await channel.messages.fetch(messageId);
+
+    const embed = new EmbedBuilder()
+      .setDescription(
+        [
+          "📝 **Step 9: Assets**",
+          "Do you have any existing assets (images, icons, logos, UI elements) you'd like to include in the commission?",
+        ].join("\n")
+      )
+      .setColor(0x2ecc71)
+      .addFields({ name: "✅ Your answer", value: "Yes, I have assets", inline: false })
+      .setFooter({ text: `Question ${index + 1} of ${total} — answered` });
+
+    const yesBtn = new ButtonBuilder()
+      .setCustomId("q_choice:hasAssets:Yes")
+      .setLabel("Yes, I have assets")
+      .setStyle(ButtonStyle.Success)
+      .setEmoji("✅")
+      .setDisabled(true);
+
+    const noBtn = new ButtonBuilder()
+      .setCustomId("q_choice:hasAssets:No")
+      .setLabel("No, start fresh")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("❌")
+      .setDisabled(true);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(yesBtn, noBtn);
+
+    await msg.edit({ embeds: [embed], components: [row] });
+  } catch {
+    // Silently skip
   }
 }
 
