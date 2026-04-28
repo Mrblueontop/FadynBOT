@@ -6,31 +6,22 @@ import { askQuestion, sendReviewEmbed, buildUiElementsAfterAnswerRow, updateQues
 export async function handleModal(interaction: ModalSubmitInteraction): Promise<void> {
   const { customId, user } = interaction;
 
-  // ── Step 4: UI elements page 1 ───────────────────────────────────────────
-  if (customId === "ui_elements_modal:page1") {
+  // ── Step 4: UI elements (single modal, 2 fields) ─────────────────────────
+  // customId is "ui_elements_modal:main" (buildUiElementsModal in flows.ts)
+  if (customId === "ui_elements_modal:main" || customId === "ui_elements_modal:page1" || customId === "ui_elements_modal:page2") {
     const session = getSession(user.id);
     if (!session) return;
 
-    const fields = ["main_menu", "hud", "shop", "inventory", "settings"];
-    const fieldLabels: Record<string, string> = {
-      main_menu: "Main Menu",
-      hud: "HUD",
-      shop: "Shop",
-      inventory: "Inventory",
-      settings: "Settings",
-    };
+    let buttonsVal = "";
+    let framesVal = "";
+    try { buttonsVal = interaction.fields.getTextInputValue("buttons_needed").trim(); } catch {}
+    try { framesVal = interaction.fields.getTextInputValue("frames_needed").trim(); } catch {}
 
     const parts: string[] = [];
-    for (const f of fields) {
-      try {
-        const val = interaction.fields.getTextInputValue(f).trim();
-        if (val) parts.push(`**${fieldLabels[f]}:** ${val}`);
-      } catch {}
-    }
+    if (buttonsVal) parts.push(`Buttons Needed: ${buttonsVal}`);
+    if (framesVal) parts.push(`Frames Needed: ${framesVal}`);
 
-    const existing = session.answers["uiRequirementType"] ?? "";
-    const p2Marker = existing.includes("--- Page 2 ---") ? existing.split("--- Page 2 ---")[1] : "";
-    session.answers["uiRequirementType"] = parts.join("\n") + (p2Marker ? `\n--- Page 2 ---${p2Marker}` : "");
+    session.answers["uiRequirementType"] = parts.join("\n");
     updateSession(session);
 
     const summary = parts.length > 0 ? parts.join("\n") : "*Nothing filled in yet.*";
@@ -48,57 +39,14 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     }
 
     const embed = new EmbedBuilder()
-      .setTitle("📋 Step 4: UI Elements — Page 1 Saved")
+      .setTitle("📋 Step 4: UI Frames Needed — Saved")
       .setDescription(summary)
       .setColor(0x9b59b6)
-      .setFooter({ text: "Click Page 2 to add more, Edit to change, or Next to continue" });
+      .setFooter({ text: "Click Edit to change, or Next to continue" });
 
     await interaction.reply({
       embeds: [embed],
       components: [buildUiElementsAfterAnswerRow(1)],
-      ephemeral: false,
-    });
-    return;
-  }
-
-  // ── Step 4: UI elements page 2 ───────────────────────────────────────────
-  if (customId === "ui_elements_modal:page2") {
-    const session = getSession(user.id);
-    if (!session) return;
-
-    const fields = ["leaderboard", "loading", "cutscene", "notifications", "other"];
-    const fieldLabels: Record<string, string> = {
-      leaderboard: "Leaderboard",
-      loading: "Loading Screen",
-      cutscene: "Cutscene UI",
-      notifications: "Notifications",
-      other: "Other",
-    };
-
-    const parts: string[] = [];
-    for (const f of fields) {
-      try {
-        const val = interaction.fields.getTextInputValue(f).trim();
-        if (val) parts.push(`**${fieldLabels[f]}:** ${val}`);
-      } catch {}
-    }
-
-    const existing = session.answers["uiRequirementType"] ?? "";
-    const p1Part = existing.includes("--- Page 2 ---") ? existing.split("--- Page 2 ---")[0] : existing;
-    const p2Text = parts.length > 0 ? parts.join("\n") : "";
-    session.answers["uiRequirementType"] = p1Part + (p2Text ? `\n--- Page 2 ---\n${p2Text}` : "");
-    updateSession(session);
-
-    const summary = parts.length > 0 ? parts.join("\n") : "*Nothing filled in on page 2.*";
-    const embed = new EmbedBuilder()
-      .setTitle("📋 Step 4: UI Elements — Page 2 Saved")
-      .setDescription(summary)
-      .setColor(0x9b59b6)
-      .setFooter({ text: "Click Edit to change page 1, or Next to continue" });
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [buildUiElementsAfterAnswerRow(2)],
       ephemeral: false,
     });
     return;
