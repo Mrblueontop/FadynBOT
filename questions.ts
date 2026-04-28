@@ -146,15 +146,16 @@ export const commissionQuestions: Question[] = [
     answerType: { kind: "text", optional: true, maxLength: 500 },
   },
 
-  // ── Step 8: Reference — required ─────────────────────────────────────────
+  // ── Step 8: Reference — required, image/video uploads only ───────────────
   {
     id: "reference",
     prompt:
       "📝 **Step 8: Reference**\n" +
-      "Provide a reference — upload an image attachment **or** paste a direct image/link URL.\n\n" +
-      "This is **required**. It helps the designer understand your vision.\n" +
-      "You can send multiple images or links.",
-    answerType: { kind: "text", acceptMedia: true, maxLength: 800 },
+      "Upload images or videos that show the style you want — this is **required**.\n\n" +
+      "• Only image or video files are accepted (no YouTube links, etc.)\n" +
+      "• You can upload up to **5 files**\n" +
+      "• Type **done** when you're finished",
+    answerType: { kind: "text", isReference: true, maxLength: 800 } as any,
   },
 
   // ── Step 9: Assets ────────────────────────────────────────────────────────
