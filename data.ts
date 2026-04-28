@@ -14,6 +14,7 @@ export interface SavedApplication {
   logChannelId?: string;
   finalEditUsed?: boolean;
   questionMessageIds?: Record<string, string>;
+  uiElementsStrikes?: number;
 }
 
 const sessions = new Map<string, SavedApplication>();
