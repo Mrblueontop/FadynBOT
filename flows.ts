@@ -109,37 +109,31 @@ export function buildModerationFixModal(
  */
 export async function sendStartPrompt(dm: DMChannel): Promise<Message> {
   const embed = new EmbedBuilder()
-    .setTitle("👋 Commission Request")
+    .setTitle("Fadyn Works")
     .setDescription(
       [
-        "Hey! Thanks for reaching out about a UI commission.",
+        "**Are you sure you want to start an order?**",
         "",
-        "**Before we begin, please have the following ready:**",
-        "› A description of your game and what it does",
-        "› Reference images or links showing the style you want",
-        "› Any existing assets (logos, icons, etc.) if applicable",
+        "Once you start the order, you will be asked a series of questions — some required, some optional. Your answers to these questions will determine the price of the order.",
         "",
-        "**What to expect:**",
-        "› The form takes about **2–3 minutes** to complete",
-        "› All questions are required unless stated otherwise",
-        "› Type `cancel`, `close`, or `end` at any time to stop",
+        "You have **15 minutes** to answer each question. If you take too long on any question, your application will be canceled, and you will need to restart.",
         "",
-        "Hit **Start** when you're ready to begin! 🚀",
+        "If you wish to stop the application while it is in progress, feel free to send `cancel` or `end` at any time.",
       ].join("\n")
     )
     .setColor(0x9b59b6)
-    .setFooter({ text: "Commission Request • Step 1 starts after you click Start" });
+    .setFooter({ text: "Fadyn Works • Click Start to begin your order" });
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("app:start")
-      .setLabel("Start Request")
+      .setLabel("Start")
       .setStyle(ButtonStyle.Success)
-      .setEmoji("🚀"),
+      .setEmoji("✅"),
     new ButtonBuilder()
       .setCustomId("app:cancel")
       .setLabel("Cancel")
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Danger)
       .setEmoji("✖️")
   );
 
