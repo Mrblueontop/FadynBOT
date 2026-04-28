@@ -15,6 +15,8 @@ export interface SavedApplication {
   finalEditUsed?: boolean;
   questionMessageIds?: Record<string, string>;
   uiElementsStrikes?: number;
+  deadlineTimestamp?: number;   // Unix seconds — AI-resolved deadline
+  deadlinePending?: boolean;    // true while waiting for Confirm / Re-enter
 }
 
 const sessions = new Map<string, SavedApplication>();
