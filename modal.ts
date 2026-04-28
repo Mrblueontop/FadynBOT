@@ -1,15 +1,19 @@
 import { type ModalSubmitInteraction, EmbedBuilder } from "discord.js";
 import { getSession, updateSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
-import { askQuestion, sendReviewEmbed, buildUiElementsAfterAnswerRow, updateQuestionToAnswered } from "./flows.js";
+import {
+  askQuestion,
+  sendReviewEmbed,
+  buildUiElementsAfterAnswerRow,
+  updateQuestionToAnswered,
+  updateStep4ToAnswered,
+} from "./flows.js";
 import { moderateUiElements, buildUiElementsModerationWarning } from "./moderation.js";
 
 export async function handleModal(interaction: ModalSubmitInteraction): Promise<void> {
   const { customId, user } = interaction;
 
   // ── Step 4: UI elements (single modal, 2 fields) ─────────────────────────
-  // customId is "ui_elements_modal:main" (buildUiElementsModal in flows.ts)
-  // Also catches legacy aliases page1 / page2 just in case
   if (
     customId === "ui_elements_modal:main" ||
     customId === "ui_elements_modal:page1" ||
@@ -26,7 +30,7 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     // ── AI validation ─────────────────────────────────────────────────────
     const modResult = await moderateUiElements(buttonsVal, framesVal);
     if (!modResult.passed) {
-      // Send warning embed with Edit + Cancel buttons — do NOT save the bad answer
+      // Reply with warning — original question message stays untouched
       await interaction.reply(buildUiElementsModerationWarning(modResult));
       return;
     }
@@ -39,31 +43,20 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     session.answers["uiRequirementType"] = parts.join("\n");
     updateSession(session);
 
-    const summary = parts.join("\n");
+    // Acknowledge the modal (required by Discord) without sending a new message
+    await interaction.deferUpdate();
 
-    // Edit the original Step 4 question message in-place
+    // Edit the original Step 4 question message in-place to green + Edit button
     const dm = await user.createDM();
     const msgId = session.questionMessageIds?.["uiRequirementType"];
     if (msgId) {
       const questions = getQuestionsForRoles(session.roles, session.answers);
       const idx = questions.findIndex((q) => q.id === "uiRequirementType");
-      const q = questions[idx];
-      if (q && idx >= 0) {
-        await updateQuestionToAnswered(dm, msgId, q, session.answers["uiRequirementType"]!, idx, questions.length);
+      if (idx >= 0) {
+        await updateStep4ToAnswered(dm, msgId, session.answers["uiRequirementType"]!, idx, questions.length);
       }
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle("📋 Step 4: UI Frames Needed — Saved")
-      .setDescription(summary)
-      .setColor(0x9b59b6)
-      .setFooter({ text: "Click Edit to change, or Next to continue" });
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [buildUiElementsAfterAnswerRow(1)],
-      ephemeral: false,
-    });
     return;
   }
 
@@ -79,7 +72,6 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     const questions = getQuestionsForRoles(session.roles, session.answers);
     const currentIndex = questions.findIndex((q) => q.id === questionId);
 
-    // Edit original question message in-place
     const dm = await user.createDM();
     const msgId = session.questionMessageIds?.[questionId];
     if (msgId && currentIndex >= 0) {
