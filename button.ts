@@ -20,6 +20,7 @@ import {
   buildUiElementsAfterAnswerRow,
   buildCloseConfirmPayload,
   disableHasAssetsButtons,
+  buildModerationFixModal,
 } from "./flows.js";
 
 export async function handleButton(interaction: ButtonInteraction): Promise<void> {
@@ -204,6 +205,22 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
       const idx = questions.findIndex((q) => q.id === questionId);
       await askQuestion(dm, q, idx, questions.length, session);
     }
+    return;
+  }
+
+  // ── moderation:fix — open pre-filled modal for flagged fields ────────────
+  if (customId === "moderation:fix") {
+    const session = getSession(user.id);
+    if (!session) return;
+    const flags = (session as any).moderationFlags as { questionId: string; label: string }[] | undefined;
+    if (!flags || flags.length === 0) {
+      // No flags stored — fall back to review
+      await interaction.deferUpdate();
+      const dm = await user.createDM();
+      await sendReviewEmbed(dm, session);
+      return;
+    }
+    await interaction.showModal(buildModerationFixModal(flags, session.answers));
     return;
   }
 
