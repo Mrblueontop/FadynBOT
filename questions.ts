@@ -170,10 +170,12 @@ export const commissionQuestions: Question[] = [
   {
     id: "projectTitle",
     prompt:
-      "📝 **Step 1: Project Title**\n" +
-      "What is the title of your project or commission?\n\n" +
-      "This can be your Roblox game name, or just a name for this commission — " +
-      "sharing your actual project name is completely optional.",
+      "## 1/11 — Project Title\n" +
+      "### 📌 What is your project called?\n\n" +
+      "Provide the title of your commission or project.\n" +
+      "This can be your Roblox game name, working title, or any label you want us to use.\n\n" +
+      "**Purpose:** Helps us correctly organize and identify your request.\n\n" +
+      "💬 *Reply using the Discord reply system so your answer links to this step.*",
     answerType: { kind: "text", maxLength: 100 },
   },
 
@@ -181,10 +183,11 @@ export const commissionQuestions: Question[] = [
   {
     id: "projectDescription",
     prompt:
-      "📝 **Step 2: Project Description** *(Optional)*\n" +
-      "You can briefly describe your project here — what it is, what it does, or " +
-      "anything that helps us understand the context for your UI.\n\n" +
-      "This is mainly to improve UI clarity and organisation. Type **N/A** to skip.",
+      "## 2/11 — Project Description *(Optional)*\n" +
+      "### 🧠 Tell us about your project\n\n" +
+      "Briefly explain what you're building, what it does, and your overall idea or vision.\n\n" +
+      "**If not needed:** Type `N/A`\n\n" +
+      "💬 *Reply to continue.*",
     answerType: { kind: "text", optional: true, maxLength: 1000 },
   },
 
@@ -192,12 +195,13 @@ export const commissionQuestions: Question[] = [
   {
     id: "uiRequirementType",
     prompt:
-      "📝 **Step 3: UI Elements Needed**\n" +
-      "Click **Fill In** below to tell us what UI elements you need.\n\n" +
-      "• **Buttons Needed** — list your buttons (e.g. `Play, Shop, Inventory, Back`)\n" +
-      "• **Frames Needed** — list your screens/frames (e.g. `Main Menu, HUD, Leaderboard`)\n\n" +
-      "Leave a field blank if you don't need that type. " +
-      "The bot will automatically identify each element from your input.",
+      "## 3/11 — UI Elements Needed\n" +
+      "### 🎨 What do you need designed?\n\n" +
+      "Click **Fill In** and list your UI requirements:\n\n" +
+      "• 🟦 **Buttons** (e.g. `Play, Shop, Settings`)\n" +
+      "• 🟩 **Frames** (e.g. `Main Menu, HUD, Inventory`)\n\n" +
+      "Leave blank anything you don't need.\n\n" +
+      "💬 *Use the Fill In button to submit.*",
     answerType: {
       kind: "choice",
       options: [{ label: "Fill In", value: "open_modal", emoji: "📋" }],
@@ -207,7 +211,11 @@ export const commissionQuestions: Question[] = [
   // ── Step 4: Button Style — only if buttons detected ───────────────────────
   {
     id: "buttonStyle",
-    prompt: "📝 **Step 4: Button Style**\nSelect your preferred button style:",
+    prompt:
+      "## 4/11 — Button Style\n" +
+      "### 🔘 Choose button design style\n\n" +
+      "Select how you want your buttons to look (shape, feel, visual style).\n\n" +
+      "💬 *Pick one option from the dropdown.*",
     answerType: {
       kind: "dropdown",
       options: [
@@ -223,7 +231,11 @@ export const commissionQuestions: Question[] = [
   // ── Step 5: Overall Style — only if frames detected ───────────────────────
   {
     id: "overallStyle",
-    prompt: "📝 **Step 5: Overall Style**\nSelect your preferred overall UI style for your frames/screens:",
+    prompt:
+      "## 5/11 — Overall Style\n" +
+      "### 🖼️ UI Theme & Direction\n\n" +
+      "Choose the main visual style for your interface (mood, theme, layout direction).\n\n" +
+      "💬 *Select one option to proceed.*",
     answerType: {
       kind: "dropdown",
       options: [
@@ -238,10 +250,18 @@ export const commissionQuestions: Question[] = [
   },
 
   // ── Step 6: Animation — dynamic, shown if any UI elements were detected ───
-  // The actual prompt + options are built at render time in askQuestion().
   {
     id: "animation",
-    prompt: "✨ **Animation**\nWould you like any of your UI elements to be animated?",
+    prompt:
+      "## 6/11 — Animations\n" +
+      "### ✨ UI Motion Effects\n\n" +
+      "Would you like animations applied to your UI?\n\n" +
+      "Includes:\n" +
+      "• Button hover effects\n" +
+      "• Frame transitions\n" +
+      "• Interactive motion\n\n" +
+      "⚠️ *Note: Complex animations may affect pricing.*\n\n" +
+      "💬 *Select an option.*",
     answerType: {
       kind: "choice",
       options: [
@@ -256,9 +276,11 @@ export const commissionQuestions: Question[] = [
   {
     id: "colorScheme",
     prompt:
-      "📝 **Step 7: Specific Colors**\n" +
-      "Do you have any specific colors in mind? (hex codes, color names, themes, etc.)\n\n" +
-      "Type **N/A** to skip.",
+      "## 7/11 — Colors\n" +
+      "### 🎨 Design Color Preferences\n\n" +
+      "List any preferred colors, hex codes, or themes.\n\n" +
+      "**If none:** Type `N/A`\n\n" +
+      "💬 *Reply to continue.*",
     answerType: { kind: "text", optional: true, maxLength: 500 },
   },
 
@@ -266,11 +288,13 @@ export const commissionQuestions: Question[] = [
   {
     id: "reference",
     prompt:
-      "📝 **Step 8: Reference**\n" +
-      "Upload images or videos that show the style you want — this is **required**.\n\n" +
-      "• Only image or video file uploads are accepted (no YouTube links, etc.)\n" +
-      "• You can upload up to **5 files**\n" +
-      "• Type **done** when you're finished",
+      "## 8/11 — References *(Required)*\n" +
+      "### 📎 Inspiration & Style References\n\n" +
+      "Upload images or videos that represent your desired UI style.\n\n" +
+      "• Up to **5 files**\n" +
+      "• Images or videos only\n" +
+      "• Required for accurate design matching\n\n" +
+      "When finished, type: **done**",
     answerType: { kind: "text", isReference: true, maxLength: 800 } as any,
   },
 
@@ -278,9 +302,13 @@ export const commissionQuestions: Question[] = [
   {
     id: "hasAssets",
     prompt:
-      "📝 **Step 9: Assets**\n" +
-      "Do you have any existing assets (images, icons, logos, UI elements) " +
-      "you'd like to include in the commission?",
+      "## 9/11 — Assets\n" +
+      "### 🧩 Existing Resources\n\n" +
+      "Do you already have assets we should use?\n\n" +
+      "Examples:\n" +
+      "• Logos\n" +
+      "• Icons\n" +
+      "• Custom UI graphics",
     answerType: {
       kind: "choice",
       options: [
@@ -294,11 +322,11 @@ export const commissionQuestions: Question[] = [
   {
     id: "assetFiles",
     prompt:
-      "📝 **Step 9b: Upload Your Assets**\n" +
-      "Upload your assets (images, icons, logos, etc.) as file attachments.\n\n" +
-      "• Only image or video files are accepted\n" +
-      "• You can upload up to **5 files**\n" +
-      "• Type **done** when you're finished, or **skip** to continue without uploading",
+      "## 9b — Asset Upload\n" +
+      "### 📤 Upload your files\n\n" +
+      "• Max **5 files**\n" +
+      "• Images or videos only\n\n" +
+      "Type **done** when finished, or **skip** to continue without uploading.",
     answerType: { kind: "text", isAssets: true, optional: true, maxLength: 2000 } as any,
     showIf: (a) => a["hasAssets"] === "Yes",
   },
@@ -307,9 +335,10 @@ export const commissionQuestions: Question[] = [
   {
     id: "paymentMethod",
     prompt:
-      "📝 **Step 10: Payment Method**\n" +
-      "How would you like to pay? Select your preferred method below.\n\n" +
-      "*(Final price will be confirmed by the designer after reviewing your request.)*",
+      "## 10/11 — Payment Method\n" +
+      "### 💳 How will you pay?\n\n" +
+      "Select your preferred payment method.\n\n" +
+      "*Final pricing will be confirmed after review.*",
     answerType: {
       kind: "dropdown",
       options: [
@@ -324,9 +353,13 @@ export const commissionQuestions: Question[] = [
   {
     id: "extraInfo",
     prompt:
-      "📝 **Step 11: Extra Info**\n" +
-      "Any additional notes, deadlines, or special requests?\n\n" +
-      "Type **N/A** to skip.",
+      "## 11/11 — Extra Info\n" +
+      "### 📝 Additional Notes\n\n" +
+      "Add anything else we should know:\n\n" +
+      "• Deadlines\n" +
+      "• Special requests\n" +
+      "• Extra instructions\n\n" +
+      "**If nothing:** Type `N/A`",
     answerType: { kind: "text", optional: true, maxLength: 1000 },
   },
 ];
