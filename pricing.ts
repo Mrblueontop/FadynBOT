@@ -136,19 +136,19 @@ function buildPricingPrompt(answers: Record<string, string>): string {
   const lines: string[] = ["Commission intake answers:"];
 
   const labelMap: Record<string, string> = {
-    name: "Client name",
-    projectName: "Project name",
+    projectTitle:       "Project title",
     projectDescription: "Project description",
-    uiRequirementType: "UI elements needed",
-    buttonStyle: "Button style",
-    overallStyle: "Overall style",
-    colorScheme: "Color scheme / fonts",
-    reference: "Reference provided",
-    paymentMethod: "Preferred payment",
-    budgetPaypal: "Budget (PayPal)",
-    budgetRobux: "Budget (Robux)",
-    budgetGiftCard: "Budget (Gift Card)",
-    extraInfo: "Extra info / deadline",
+    uiRequirementType:  "UI elements needed",
+    buttonStyle:        "Button style",
+    overallStyle:       "Overall style",
+    animation:          "Animation",
+    colorScheme:        "Color scheme / fonts",
+    reference:          "Reference provided",
+    paymentMethod:      "Preferred payment",
+    budgetPaypal:       "Budget (PayPal)",
+    budgetRobux:        "Budget (Robux)",
+    budgetGiftCard:     "Budget (Gift Card)",
+    extraInfo:          "Extra info / deadline",
   };
 
   for (const [key, label] of Object.entries(labelMap)) {
