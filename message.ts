@@ -1,7 +1,7 @@
 import { type Message, ChannelType } from "discord.js";
 import { getSession, updateSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
-import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered, buildCloseConfirmPayload } from "./flows.js";
+import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered, updateReferenceEmbed, buildCloseConfirmPayload } from "./flows.js";
 
 export async function handleMessage(message: Message): Promise<void> {
   // Only handle DMs
@@ -36,6 +36,145 @@ export async function handleMessage(message: Message): Promise<void> {
   // Only handle text/image/media/link type questions via message
   const kind = currentQ.answerType.kind;
   if (kind !== "text" && kind !== "image" && kind !== "media" && kind !== "link") return;
+
+  // ── Reference question: dedicated multi-file upload flow ──────────────────
+  if (currentQ.id === "reference") {
+    const MAX_REF = 5;
+    const ALLOWED_IMAGE_TYPES = /^image\//;
+    const ALLOWED_VIDEO_TYPES = /^video\//;
+
+    const isDoneKeyword = /^\s*done\s*$/i.test(message.content.trim());
+
+    // Collect valid attachments (images + videos only — no links)
+    const attachments = [...message.attachments.values()];
+    const validAttachments = attachments.filter((a) => {
+      const ct = a.contentType ?? "";
+      return ALLOWED_IMAGE_TYPES.test(ct) || ALLOWED_VIDEO_TYPES.test(ct);
+    });
+
+    const hasInvalidAttachments = attachments.length > 0 && validAttachments.length < attachments.length;
+    const hasBareUrl = !attachments.length && /^https?:\/\//i.test(message.content.trim()) && !isDoneKeyword;
+
+    // Reject bare URLs or non-image/video files
+    if (hasBareUrl || hasInvalidAttachments) {
+      await message.reply({
+        content: "⚠️ Only image or video file uploads are accepted for references — no links or other file types. Please upload a file directly.",
+      }).catch(() => {});
+      return;
+    }
+
+    // If no attachments and not "done", ignore silently (stray text)
+    if (!validAttachments.length && !isDoneKeyword) return;
+
+    // Load existing files
+    const existing = session.answers["reference"] ? session.answers["reference"].split("\n").filter(Boolean) : [];
+
+    // Accumulate new files (respect cap)
+    let combined = existing;
+    if (validAttachments.length > 0) {
+      const newUrls = validAttachments.map((a) => a.url);
+      combined = [...existing, ...newUrls].slice(0, MAX_REF);
+    }
+
+    // Handle "done" — require at least one file
+    if (isDoneKeyword) {
+      if (combined.length === 0) {
+        await message.reply({
+          content: "⚠️ At least one reference image or video is required. Please upload a file before typing **done**.",
+        }).catch(() => {});
+        return;
+      }
+      // Advance: mark answered, move to next question
+      session.answers["reference"] = combined.join("\n");
+      const msgId = session.questionMessageIds?.["reference"];
+      if (msgId) {
+        await updateQuestionToAnswered(
+          message.channel as any,
+          msgId,
+          currentQ,
+          `${combined.length} file${combined.length === 1 ? "" : "s"} uploaded`,
+          currentIndex,
+          questions.length
+        );
+      }
+      if (isEditing) {
+        session.step = "review";
+        session.editingQuestionId = undefined;
+        updateSession(session);
+        const msg = await sendReviewEmbed(message.channel as any, session);
+        session.reviewMessageId = msg.id;
+        updateSession(session);
+      } else {
+        const next = currentIndex + 1;
+        if (next >= questions.length) {
+          session.step = "review";
+          updateSession(session);
+          const msg = await sendReviewEmbed(message.channel as any, session);
+          session.reviewMessageId = msg.id;
+          updateSession(session);
+        } else {
+          session.currentQuestionIndex = next;
+          updateSession(session);
+          const q = questions[next]!;
+          const msgOut = await askQuestion(message.channel as any, q, next, questions.length, session);
+          if (!session.questionMessageIds) session.questionMessageIds = {};
+          session.questionMessageIds[q.id] = msgOut.id;
+          updateSession(session);
+        }
+      }
+      return;
+    }
+
+    // New files uploaded — save and update the embed
+    session.answers["reference"] = combined.join("\n");
+    updateSession(session);
+
+    const msgId = session.questionMessageIds?.["reference"];
+    if (msgId) {
+      await updateReferenceEmbed(message.channel as any, msgId, currentIndex, questions.length, combined.length);
+    }
+
+    // Auto-advance if cap reached
+    if (combined.length >= MAX_REF) {
+      session.answers["reference"] = combined.join("\n");
+      if (msgId) {
+        await updateQuestionToAnswered(
+          message.channel as any,
+          msgId,
+          currentQ,
+          `${combined.length} files uploaded`,
+          currentIndex,
+          questions.length
+        );
+      }
+      if (isEditing) {
+        session.step = "review";
+        session.editingQuestionId = undefined;
+        updateSession(session);
+        const msg = await sendReviewEmbed(message.channel as any, session);
+        session.reviewMessageId = msg.id;
+        updateSession(session);
+      } else {
+        const next = currentIndex + 1;
+        if (next >= questions.length) {
+          session.step = "review";
+          updateSession(session);
+          const msg = await sendReviewEmbed(message.channel as any, session);
+          session.reviewMessageId = msg.id;
+          updateSession(session);
+        } else {
+          session.currentQuestionIndex = next;
+          updateSession(session);
+          const q = questions[next]!;
+          const msgOut = await askQuestion(message.channel as any, q, next, questions.length, session);
+          if (!session.questionMessageIds) session.questionMessageIds = {};
+          session.questionMessageIds[q.id] = msgOut.id;
+          updateSession(session);
+        }
+      }
+    }
+    return;
+  }
 
   let answer = message.content.trim();
 
@@ -93,18 +232,6 @@ export async function handleMessage(message: Message): Promise<void> {
         return;
       }
       answer = combined.join("\n");
-    }
-  }
-
-  // ── Reference question: image or URL required ─────────────────────────────
-  if (currentQ.id === "reference") {
-    const hasAttachment = message.attachments.size > 0;
-    const isUrl = /^https?:\/\//i.test(answer);
-    if (!hasAttachment && !isUrl) {
-      await message.reply({
-        content: "⚠️ A reference is required. Please upload an image or paste a direct image/link URL.",
-      }).catch(() => {});
-      return;
     }
   }
 
