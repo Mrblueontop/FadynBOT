@@ -381,23 +381,9 @@ client.once(Events.ClientReady, async (c) => {
           const reviewMsg = await sendReviewEmbed(dm, app, !app.finalEditUsed).catch(() => null);
           if (reviewMsg) { app.reviewMessageId = reviewMsg.id; updateSession(app); }
         } else {
-          await dm.send({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle("⚡ We're Back Online!")
-                .setDescription(
-                  "Sorry for the interruption — your commission application is still saved! I'm re-sending your current question below."
-                )
-                .setColor(0x9b59b6),
-            ],
-          }).catch(() => {});
-
-          const msg = await askQuestion(dm, currentQ, safeIndex, questions.length).catch(() => null);
-          if (msg) {
-            if (!app.questionMessageIds) app.questionMessageIds = {};
-            app.questionMessageIds[currentQ.id] = msg.id;
-            updateSession(app);
-          }
+          // Session is still live — the existing question message is already in the
+          // user's DMs. Don't re-send it or send any "we're back" noise; just let
+          // the message handler pick up the next reply naturally.
         }
         console.log(`[startup] Resumed application for ${app.userId} at question ${safeIndex}.`);
       }
