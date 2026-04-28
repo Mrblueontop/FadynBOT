@@ -1,5 +1,5 @@
 import { type ModalSubmitInteraction, EmbedBuilder } from "discord.js";
-import { getSession, updateSession } from "./data.js";
+import { getSession, updateSession, clearSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
 import {
   askQuestion,
@@ -9,6 +9,8 @@ import {
   updateStep4ToAnswered,
 } from "./flows.js";
 import { moderateUiElements, buildUiElementsModerationWarning } from "./moderation.js";
+
+const MAX_UI_STRIKES = 3;
 
 export async function handleModal(interaction: ModalSubmitInteraction): Promise<void> {
   const { customId, user } = interaction;
@@ -29,13 +31,45 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
 
     // ── AI validation ─────────────────────────────────────────────────────
     const modResult = await moderateUiElements(buttonsVal, framesVal);
+
     if (!modResult.passed) {
-      // Reply with warning — original question message stays untouched
-      await interaction.reply(buildUiElementsModerationWarning(modResult));
+      // Increment strike counter
+      session.uiElementsStrikes = (session.uiElementsStrikes ?? 0) + 1;
+      updateSession(session);
+
+      const strikesLeft = MAX_UI_STRIKES - session.uiElementsStrikes;
+
+      if (session.uiElementsStrikes >= MAX_UI_STRIKES) {
+        // Too many bad attempts — end the application
+        clearSession(user.id);
+
+        const embed = new EmbedBuilder()
+          .setTitle("❌ Application Ended")
+          .setDescription(
+            [
+              "You've entered invalid UI element names too many times.",
+              "",
+              "Your commission request has been **cancelled**.",
+              "",
+              "If you'd like to try again, head back to the server and start a new request. Make sure you have real button and frame names ready!",
+            ].join("\n")
+          )
+          .setColor(0xe74c3c)
+          .setFooter({ text: "Too many invalid attempts • Application cancelled" });
+
+        await interaction.reply({ embeds: [embed], components: [] });
+        return;
+      }
+
+      // Still have strikes left — show warning with strikes remaining
+      const warningPayload = buildUiElementsModerationWarning(modResult, strikesLeft);
+      await interaction.reply({ embeds: warningPayload.embeds ?? [], components: (warningPayload.components ?? []) as any });
       return;
     }
 
-    // ── Save valid answer ─────────────────────────────────────────────────
+    // ── Valid — reset strike counter and save answer ───────────────────────
+    session.uiElementsStrikes = 0;
+
     const parts: string[] = [];
     if (buttonsVal) parts.push(`Buttons Needed: ${buttonsVal}`);
     if (framesVal)  parts.push(`Frames Needed: ${framesVal}`);
@@ -43,10 +77,10 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     session.answers["uiRequirementType"] = parts.join("\n");
     updateSession(session);
 
-    // Acknowledge the modal (required by Discord) without sending a new message
+    // Silently acknowledge the modal
     await interaction.deferUpdate();
 
-    // Edit the original Step 4 question message in-place to green + Edit button
+    // Edit the original Step 4 message in-place to green + Edit/Next buttons
     const dm = await user.createDM();
     const msgId = session.questionMessageIds?.["uiRequirementType"];
     if (msgId) {
