@@ -24,7 +24,6 @@ import {
   ButtonBuilder,
   ButtonStyle,
   type MessageCreateOptions,
-  type InteractionReplyOptions,
 } from "discord.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -330,17 +329,25 @@ export function buildModerationWarningPayload(
  * Has an "Edit" button to reopen the modal and a "Cancel" button.
  */
 export function buildUiElementsModerationWarning(
-  result: ModerationResult
-): InteractionReplyOptions {
+  result: ModerationResult,
+  strikesLeft?: number
+): MessageCreateOptions {
   const flagLines = result.flags.map(
     (f) => `> **${f.label}** — ${f.reason}`
   );
+
+  const strikeWarning =
+    strikesLeft === 1
+      ? "\n⚠️ **Last chance** — one more invalid attempt will cancel your application."
+      : strikesLeft !== undefined
+      ? `\n⚠️ **${strikesLeft} attempt${strikesLeft === 1 ? "" : "s"} remaining** before your application is cancelled.`
+      : "";
 
   const embed = new EmbedBuilder()
     .setTitle("⚠️ Step 4: Invalid UI Elements")
     .setDescription(
       [
-        "The UI elements you entered don't look like real names. Please go back and enter actual button or frame names.",
+        "The UI elements you entered don\'t look like real names. Please go back and enter actual button or frame names.",
         "",
         ...flagLines,
         "",
@@ -348,10 +355,10 @@ export function buildUiElementsModerationWarning(
         "> Buttons: `Play, Shop, Inventory, Settings, Back`",
         "> Frames: `Main Menu, HUD, Shop Screen, Leaderboard`",
         "",
-        "Hit **Edit** to fix your answer.",
+        "Hit **Edit** to fix your answer." + strikeWarning,
       ].join("\n")
     )
-    .setColor(0xe67e22)
+    .setColor(strikesLeft === 1 ? 0xe74c3c : 0xe67e22)
     .setFooter({ text: "Step 4 of 11 • Please enter real UI element names" });
 
   const editBtn = new ButtonBuilder()
