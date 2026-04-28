@@ -1,14 +1,13 @@
-import { type ModalSubmitInteraction, EmbedBuilder } from "discord.js";
+import { type ModalSubmitInteraction, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { getSession, updateSession, clearSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
 import {
   askQuestion,
   sendReviewEmbed,
-  buildUiElementsAfterAnswerRow,
   updateQuestionToAnswered,
   updateStep4ToAnswered,
 } from "./flows.js";
-import { moderateUiElements, buildUiElementsModerationWarning } from "./moderation.js";
+import { moderateUiElements } from "./moderation.js";
 
 const MAX_UI_STRIKES = 3;
 
@@ -39,6 +38,12 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
 
       const strikesLeft = MAX_UI_STRIKES - session.uiElementsStrikes;
 
+      // Silently acknowledge the modal first
+      await interaction.deferUpdate();
+
+      const dm = await user.createDM();
+      const msgId = session.questionMessageIds?.["uiRequirementType"];
+
       if (session.uiElementsStrikes >= MAX_UI_STRIKES) {
         // Too many bad attempts — end the application
         clearSession(user.id);
@@ -57,13 +62,54 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
           .setColor(0xe74c3c)
           .setFooter({ text: "Too many invalid attempts • Application cancelled" });
 
-        await interaction.reply({ embeds: [embed], components: [] });
+        if (msgId) {
+          try {
+            const msg = await dm.messages.fetch(msgId);
+            await msg.edit({ embeds: [embed], components: [] });
+          } catch {}
+        }
         return;
       }
 
-      // Still have strikes left — show warning with strikes remaining
-      const warningPayload = buildUiElementsModerationWarning(modResult, strikesLeft);
-      await interaction.reply({ embeds: warningPayload.embeds ?? [], components: (warningPayload.components ?? []) as any });
+      // Still have strikes left — edit Step 4 embed in-place to show the error
+      if (msgId) {
+        try {
+          const msg = await dm.messages.fetch(msgId);
+
+          const strikeWarning = strikesLeft === 1
+            ? "\n\n⚠️ **Last chance** — one more invalid attempt will cancel your application."
+            : `\n\n⚠️ **${strikesLeft} attempt${strikesLeft === 1 ? "" : "s"} remaining** before your application is cancelled.`;
+
+          const flagLines = modResult.flags.map((f) => `> **${f.label}** — ${f.reason}`).join("\n");
+
+          const embed = new EmbedBuilder()
+            .setTitle("⚠️ Step 4: Invalid UI Elements")
+            .setDescription(
+              [
+                "The names you entered don't look like real UI elements. Please try again.",
+                "",
+                flagLines,
+                "",
+                "**Valid examples:**",
+                "> Buttons: `Play, Shop, Inventory, Settings, Back`",
+                "> Frames: `Main Menu, HUD, Shop Screen, Leaderboard`",
+                "",
+                "Click **Fill In** to try again." + strikeWarning,
+              ].join("\n")
+            )
+            .setColor(strikesLeft === 1 ? 0xe74c3c : 0xe67e22)
+            .setFooter({ text: `Question 4 • ${strikesLeft} attempt${strikesLeft === 1 ? "" : "s"} remaining` });
+
+          const fillInBtn = new ButtonBuilder()
+            .setCustomId("q_choice:uiRequirementType:open_modal")
+            .setLabel("Fill In")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("📋");
+
+          const row = new ActionRowBuilder<ButtonBuilder>().addComponents(fillInBtn);
+          await msg.edit({ embeds: [embed], components: [row as any] });
+        } catch {}
+      }
       return;
     }
 
