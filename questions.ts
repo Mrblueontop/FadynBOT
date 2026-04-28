@@ -136,15 +136,14 @@ export const commissionQuestions: Question[] = [
     showIf: (a) => hasFrames(a),
   },
 
-  // ── Step 7: Visual Style & Colors ────────────────────────────────────────
-  // Renamed from "Color Scheme" — now clearly about visual colors/branding.
+  // ── Step 7: Specific Colors ──────────────────────────────────────────────
   {
     id: "colorScheme",
     prompt:
-      "📝 **Step 7: Visual Style & Colors**\n" +
-      "Describe the colors and visual feel you want — primary colors, accent colors, dark/light theme, hex codes if you have them, etc.\n\n" +
-      "Example: *\"Dark background, neon green accents, #00FF7F, futuristic feel\"*",
-    answerType: { kind: "text", minLength: 5, maxLength: 500 },
+      "📝 **Step 7: Specific Colors**\n" +
+      "Do you have any specific colors in mind? (hex codes, color names, themes, etc.)\n\n" +
+      "Type **N/A** to skip.",
+    answerType: { kind: "text", optional: true, maxLength: 500 },
   },
 
   // ── Step 8: Reference — required ─────────────────────────────────────────
