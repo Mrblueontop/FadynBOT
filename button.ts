@@ -19,6 +19,7 @@ import {
   buildUiElementsModalPage2,
   buildUiElementsAfterAnswerRow,
   buildCloseConfirmPayload,
+  disableHasAssetsButtons,
 } from "./flows.js";
 
 export async function handleButton(interaction: ButtonInteraction): Promise<void> {
@@ -143,6 +144,35 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     if (!session || !questionId || !value) return;
 
     session.answers[questionId] = value;
+
+    // ── hasAssets: Yes — disable buttons, then send assetFiles prompt ────────
+    if (questionId === "hasAssets" && value === "Yes") {
+      updateSession(session);
+      const questions = getQuestionsForRoles(session.roles, session.answers);
+      const hasAssetsIndex = questions.findIndex((q) => q.id === "hasAssets");
+
+      // Disable the Yes/No buttons on the hasAssets message
+      const hasAssetsMsgId = session.questionMessageIds?.["hasAssets"];
+      const dm = await user.createDM();
+      if (hasAssetsMsgId && hasAssetsIndex >= 0) {
+        await disableHasAssetsButtons(dm, hasAssetsMsgId, hasAssetsIndex, questions.length);
+      }
+
+      // Advance to assetFiles question
+      const assetFilesIndex = questions.findIndex((q) => q.id === "assetFiles");
+      if (assetFilesIndex >= 0) {
+        session.currentQuestionIndex = assetFilesIndex;
+        updateSession(session);
+        const assetQ = questions[assetFilesIndex]!;
+        await interaction.deferUpdate();
+        const msgOut = await askQuestion(dm, assetQ, assetFilesIndex, questions.length, session);
+        if (!session.questionMessageIds) session.questionMessageIds = {};
+        session.questionMessageIds[assetQ.id] = msgOut.id;
+        updateSession(session);
+      }
+      return;
+    }
+
     await advanceOrReview(interaction, session);
     return;
   }
