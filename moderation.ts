@@ -46,8 +46,7 @@ const MODEL = "llama-3.3-70b-versatile";
 
 /** Fields the AI must evaluate — label shown in the warning embed. */
 const FIELDS_TO_CHECK: { id: string; label: string }[] = [
-  { id: "name",               label: "Name" },
-  { id: "projectName",        label: "Project Name" },
+  { id: "projectTitle",       label: "Project Title" },
   { id: "projectDescription", label: "Project Description" },
   { id: "colorScheme",        label: "Color Scheme" },
   { id: "extraInfo",          label: "Extra Info" },
