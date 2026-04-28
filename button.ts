@@ -75,7 +75,24 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     const first = questions[0];
     if (!first) return;
 
-    await interaction.deferUpdate();
+    // Edit the start prompt embed to show "in progress" state
+    await interaction.update({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("🚀 Commission Request — In Progress")
+          .setDescription(
+            [
+              "Your request is underway! Answer the questions in the messages below.",
+              "",
+              "Type `cancel`, `close`, or `end` at any time to stop.",
+            ].join("\n")
+          )
+          .setColor(0x2ecc71)
+          .setFooter({ text: "Commission Request • In Progress" }),
+      ],
+      components: [],
+    });
+
     const msg = await askQuestion(dm as any, first, 0, questions.length, session);
     if (!session.questionMessageIds) session.questionMessageIds = {};
     session.questionMessageIds[first.id] = msg.id;
@@ -90,19 +107,19 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     return;
   }
 
-  // ── Step 4: open UI elements modal page 1 ────────────────────────────────
+  // ── Step 4: open UI elements modal ────────────────────────────────────────
   if (customId === "q_choice:uiRequirementType:open_modal") {
     await interaction.showModal(buildUiElementsModalPage1());
     return;
   }
 
-  // ── Step 4: open page 2 modal ─────────────────────────────────────────────
+  // ── Step 4: open page 2 modal (alias — now same modal) ───────────────────
   if (customId === "ui_elements:page2") {
     await interaction.showModal(buildUiElementsModalPage2());
     return;
   }
 
-  // ── Step 4: edit — reopen page 1 ─────────────────────────────────────────
+  // ── Step 4: edit — reopen modal ───────────────────────────────────────────
   if (customId === "ui_elements:edit") {
     await interaction.showModal(buildUiElementsModalPage1());
     return;
@@ -140,7 +157,7 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     const q = questions.find((q) => q.id === questionId);
     if (!q) return;
 
-    // Special case: Step 4 (uiRequirementType) — reopen modal page 1
+    // Special case: Step 4 (uiRequirementType) — reopen modal
     if (questionId === "uiRequirementType") {
       await interaction.showModal(buildUiElementsModalPage1());
       return;
