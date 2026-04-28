@@ -38,7 +38,7 @@ import {
 } from "discord.js";
 
 import { type SavedApplication, updateSession, clearSession, storeSubmission } from "./data.js";
-import { getQuestionsForRoles, type Question, resolveAnswerLabel } from "./questions.js";
+import { getQuestionsForRoles, type Question, resolveAnswerLabel, buildAnimationPrompt, buildAnimationOptions } from "./questions.js";
 import { config } from "./config.js";
 import { calculatePrice, buildPriceEmbedFields } from "./pricing.js";
 import { moderateAnswers, buildModerationWarningPayload } from "./moderation.js";
@@ -67,7 +67,42 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + "…" : str;
 }
 
-// ─── Start prompt ─────────────────────────────────────────────────────────────
+// ─── Moderation fix modal builder ────────────────────────────────────────────
+
+/**
+ * Builds a modal that shows ONLY the flagged fields, pre-filled with the
+ * user's previous answers so they can quickly correct and resubmit.
+ * Max 5 fields per Discord modal — flags should never exceed this.
+ */
+export function buildModerationFixModal(
+  flags: { questionId: string; label: string }[],
+  answers: Record<string, string>
+): ModalBuilder {
+  const modal = new ModalBuilder()
+    .setCustomId("moderation_fix_modal")
+    .setTitle("Fix Your Answers");
+
+  for (const flag of flags.slice(0, 5)) {
+    const input = new TextInputBuilder()
+      .setCustomId(`fix_field:${flag.questionId}`)
+      .setLabel(truncate(flag.label, 45))
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setPlaceholder("Update your answer here…")
+      .setMaxLength(1000);
+
+    const existing = answers[flag.questionId];
+    if (existing && existing !== "N/A") {
+      input.setValue(truncate(existing, 1000));
+    }
+
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input) as any);
+  }
+
+  return modal;
+}
+
+
 
 /**
  * Sends the opening "Commission Request" panel in DMs with Start / Cancel.
@@ -133,9 +168,18 @@ export async function askQuestion(
 
   const kind = q.answerType.kind;
 
+  // ── Animation question: override prompt + options from live answers ────────
+  let effectiveQ = q;
+  if (q.id === "animation" && session) {
+    const dynamicPrompt   = buildAnimationPrompt(session.answers);
+    const dynamicOptions  = buildAnimationOptions(session.answers);
+    effectiveQ = { ...q, prompt: dynamicPrompt, answerType: { kind: "choice", options: dynamicOptions } };
+    embed.setDescription(dynamicPrompt);
+  }
+
   // ── Choice (buttons) ──────────────────────────────────────────────────────
-  if (kind === "choice") {
-    const opts = q.answerType.options;
+  if (effectiveQ.answerType.kind === "choice") {
+    const opts = effectiveQ.answerType.options;
     const chunks = chunkArray(opts, 5);
     for (const chunk of chunks) {
       const row = new ActionRowBuilder<ButtonBuilder>();
@@ -467,7 +511,45 @@ export async function sendReviewEmbed(
     const modResult = await moderateAnswers(session.answers);
     if (!modResult.passed) {
       console.log(`[flows] Moderation failed for ${session.userId}:`, modResult.flags);
-      return channel.send(buildModerationWarningPayload(modResult));
+
+      // Store the flagged question IDs on the session so the modal handler
+      // knows which fields to show pre-filled.
+      (session as any).moderationFlags = modResult.flags.map((f: any) => ({
+        questionId: f.questionId,
+        label: f.label,
+      }));
+      updateSession(session);
+
+      const flagLines = modResult.flags.map((f: any) => `> **${f.label}** — ${f.reason}`).join("\n");
+
+      const embed = new EmbedBuilder()
+        .setTitle("⚠️ Please Fix Your Answers")
+        .setDescription(
+          [
+            "Some of your answers don't look right. Click **Fix Now** to correct the flagged fields — they'll be pre-filled with what you wrote so you can quickly update them.",
+            "",
+            flagLines,
+            "",
+            "Your other answers are saved. Only the flagged ones need to be updated.",
+          ].join("\n")
+        )
+        .setColor(0xe67e22)
+        .setFooter({ text: "Your progress is saved — only fix the flagged fields." });
+
+      const fixBtn = new ButtonBuilder()
+        .setCustomId("moderation:fix")
+        .setLabel("Fix Now")
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji("✏️");
+
+      const cancelBtn = new ButtonBuilder()
+        .setCustomId("review:cancel")
+        .setLabel("Cancel Request")
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji("✖️");
+
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(fixBtn, cancelBtn);
+      return channel.send({ embeds: [embed], components: [row] });
     }
   } catch (err) {
     console.error("[flows] Moderation check error:", err);
@@ -551,7 +633,8 @@ export async function sendReviewEmbed(
 // ─── Review edit select ───────────────────────────────────────────────────────
 
 /**
- * Sends a dropdown so the user can pick which question to edit.
+ * Replaces the review embed in-place with an edit-select dropdown.
+ * Falls back to sending a new message if the review message can't be edited.
  */
 export async function sendReviewEditSelect(
   channel: AnyChannel,
@@ -575,22 +658,30 @@ export async function sendReviewEditSelect(
 
   const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
 
-  await channel.send({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle("✏️ Edit an Answer")
-        .setDescription(
-          [
-            "Select the question you'd like to change from the dropdown below.",
-            "",
-            "Your updated answer will be saved and the review will reload.",
-          ].join("\n")
-        )
-        .setColor(0x9b59b6)
-        .setFooter({ text: "Select a question to edit it" }),
-    ],
-    components: [row],
-  });
+  const editSelectEmbed = new EmbedBuilder()
+    .setTitle("✏️ Edit an Answer")
+    .setDescription(
+      [
+        "Select the question you'd like to change from the dropdown below.",
+        "",
+        "Your updated answer will be saved and the review will reload.",
+      ].join("\n")
+    )
+    .setColor(0x9b59b6)
+    .setFooter({ text: "Select a question to edit it" });
+
+  // Edit the existing review message in-place if possible
+  if (session.reviewMessageId) {
+    try {
+      const existing = await channel.messages.fetch(session.reviewMessageId);
+      await existing.edit({ embeds: [editSelectEmbed], components: [row] });
+      return;
+    } catch {
+      // Fall through to send a new message
+    }
+  }
+
+  await channel.send({ embeds: [editSelectEmbed], components: [row] });
 }
 
 // ─── Submit application ───────────────────────────────────────────────────────
