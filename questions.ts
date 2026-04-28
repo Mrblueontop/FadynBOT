@@ -178,9 +178,11 @@ export const commissionQuestions: Question[] = [
     id: "assetFiles",
     prompt:
       "📝 **Step 9b: Upload Your Assets**\n" +
-      "Upload your assets (images, icons, logos, etc.) as attachments, or paste direct URLs.\n\n" +
-      "You can send multiple messages. Click **Done** when finished.",
-    answerType: { kind: "text", acceptMedia: true, maxLength: 2000 },
+      "Upload your assets (images, icons, logos, etc.) as file attachments.\n\n" +
+      "• Only image or video files are accepted\n" +
+      "• You can upload up to **5 files**\n" +
+      "• Type **done** when you're finished, or **skip** to continue without uploading",
+    answerType: { kind: "text", isAssets: true, optional: true, maxLength: 2000 } as any,
     showIf: (a) => a["hasAssets"] === "Yes",
   },
 
