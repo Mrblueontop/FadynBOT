@@ -40,7 +40,7 @@ import {
 import { type SavedApplication, updateSession, clearSession, storeSubmission } from "./data.js";
 import { getQuestionsForRoles, type Question, resolveAnswerLabel, buildAnimationPrompt, buildAnimationOptions } from "./questions.js";
 import { config } from "./config.js";
-import { calculatePrice, buildPriceEmbedFields } from "./pricing.js";
+import { calculatePrice, buildPriceEmbedFields, buildPriceBreakdown, storePriceBreakdown } from "./pricing.js";
 import { moderateAnswers, buildModerationWarningPayload } from "./moderation.js";
 import { formatDeadlineTimestamp } from "./deadline.js";
 
@@ -777,10 +777,40 @@ export async function submitApplication(
   if (config.logChannelId) {
     const logChannel = await client.channels.fetch(config.logChannelId).catch(() => null);
     if (logChannel?.isTextBased()) {
-      const logMsg = await (logChannel as TextChannel).send({ embeds: [logEmbed] }).catch(() => null);
+      // Pre-compute breakdown so the button handler can retrieve it instantly
+      let breakdownText = "";
+      try {
+        const est = await calculatePrice(session.answers);
+        breakdownText = buildPriceBreakdown(session.answers, est);
+      } catch {}
+
+      const breakdownBtn = new ButtonBuilder()
+        .setCustomId("price:breakdown:pending") // updated after send with real message ID
+        .setLabel("Price Breakdown")
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji("💰");
+
+      const logRow = new ActionRowBuilder<ButtonBuilder>().addComponents(breakdownBtn);
+
+      const logMsg = await (logChannel as TextChannel)
+        .send({ embeds: [logEmbed], components: [logRow] })
+        .catch(() => null);
+
       if (logMsg) {
         session.logMessageId = logMsg.id;
         session.logChannelId = logChannel.id;
+
+        // Store breakdown keyed by the log message ID
+        if (breakdownText) storePriceBreakdown(logMsg.id, breakdownText);
+
+        // Update button customId to include real message ID so handler can look it up
+        const updatedBtn = new ButtonBuilder()
+          .setCustomId(`price:breakdown:${logMsg.id}`)
+          .setLabel("Price Breakdown")
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji("💰");
+        const updatedRow = new ActionRowBuilder<ButtonBuilder>().addComponents(updatedBtn);
+        await logMsg.edit({ components: [updatedRow] }).catch(() => {});
       }
     }
   }
@@ -847,7 +877,7 @@ export async function submitApplication(
 
       await ticketChannel.send({
         content: `<@${session.userId}>`,
-        embeds: [ticketWelcomeEmbed, logEmbed],
+        embeds: [logEmbed],
         components: [closeRow],
       });
 
