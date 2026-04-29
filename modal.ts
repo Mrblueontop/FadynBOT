@@ -138,6 +138,14 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
       }
     }
 
+    // Re-anchor index before advancing (guards against showIf shifts)
+    {
+      const answeredIds = new Set(Object.keys(session.answers));
+      for (let i = questions.length - 1; i >= 0; i--) {
+        if (answeredIds.has(questions[i]!.id)) { session.currentQuestionIndex = i; break; }
+      }
+    }
+
     // Auto-advance to the next question (replaces the removed Next button)
     const next = session.currentQuestionIndex + 1;
     if (next >= questions.length) {
@@ -189,7 +197,8 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
       return;
     }
 
-    const next = session.currentQuestionIndex + 1;
+    // Use currentIndex (from findIndex) as the anchor so showIf shifts don't skew the cursor
+    const next = (currentIndex >= 0 ? currentIndex : session.currentQuestionIndex) + 1;
     if (next >= questions.length) {
       session.step = "review";
       updateSession(session);
@@ -245,7 +254,7 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
       return;
     }
 
-    const next = session.currentQuestionIndex + 1;
+    const next = (currentIndex >= 0 ? currentIndex : session.currentQuestionIndex) + 1;
     if (next >= questions.length) {
       session.step = "review";
       updateSession(session);
