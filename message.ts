@@ -1,7 +1,8 @@
-import { type Message, ChannelType } from "discord.js";
+import { type Message, ChannelType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { getSession, updateSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
 import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered, updateReferenceEmbed, updateAssetEmbed, buildCloseConfirmPayload } from "./flows.js";
+import { resolveDeadline, formatDeadlineTimestamp } from "./deadline.js";
 
 export async function handleMessage(message: Message): Promise<void> {
   // Only handle DMs
@@ -307,6 +308,93 @@ export async function handleMessage(message: Message): Promise<void> {
       updateSession(session);
       await advanceFromAssets();
     }
+    return;
+  }
+
+
+  // ── Deadline question: AI resolver → in-place edit with Confirm / Re-enter ─
+  if (currentQ.id === "deadline") {
+    const raw = message.content.trim();
+
+    if (!raw) {
+      await message.reply({ content: "⚠️ A deadline is required. Please provide one — e.g. `End of next week` or `December 25th`." }).catch(() => {});
+      return;
+    }
+
+    // Show a thinking reaction while the AI works
+    await message.react("⏳").catch(() => {});
+
+    const result = await resolveDeadline(raw);
+
+    await message.reactions.removeAll().catch(() => {});
+
+    const msgId = session.questionMessageIds?.["deadline"];
+
+    if (!result.timestamp) {
+      // AI could not parse it — prompt user to re-enter
+      if (msgId) {
+        try {
+          const original = await message.channel.messages.fetch(msgId);
+          const embed = new EmbedBuilder()
+            .setDescription(
+              "## 11/12 — Deadline\n" +
+              "### ⏰ When do you need this by?\n\n" +
+              "⚠️ We couldn't figure out a specific date from **\"" + raw + "\"**.\n\n" +
+              "Please be more specific — for example:\n" +
+              "• `December 25th`\n" +
+              "• `End of next week`\n" +
+              "• `In 2 weeks`\n" +
+              "• `ASAP` *(we'll treat this as 3 days from now)*\n\n" +
+              "💬 *Reply to this message with a clearer deadline.*"
+            )
+            .setColor(0xe67e22)
+            .setFooter({ text: `Question ${currentIndex + 1} of ${questions.length} • Please clarify your deadline` });
+
+          await original.edit({ embeds: [embed], components: [] });
+        } catch {}
+      }
+      return;
+    }
+
+    // AI resolved it — store raw answer + timestamp, edit message in-place
+    session.answers["deadline"] = raw;
+    session.deadlineTimestamp   = result.timestamp;
+    session.deadlinePending     = true;
+    updateSession(session);
+
+    const formattedTs = formatDeadlineTimestamp(result.timestamp);
+
+    if (msgId) {
+      try {
+        const original = await message.channel.messages.fetch(msgId);
+
+        const embed = new EmbedBuilder()
+          .setDescription(
+            "## 11/12 — Deadline\n" +
+            "### ⏰ When do you need this by?\n\n" +
+            `We resolved your deadline to:\n\n**${formattedTs}**\n\n` +
+            "Does that look right?"
+          )
+          .setColor(0x9b59b6)
+          .setFooter({ text: `Question ${currentIndex + 1} of ${questions.length} • Confirm or re-enter your deadline` });
+
+        const confirmBtn = new ButtonBuilder()
+          .setCustomId("deadline:confirm")
+          .setLabel("Confirm")
+          .setStyle(ButtonStyle.Success)
+          .setEmoji("✅");
+
+        const reenterBtn = new ButtonBuilder()
+          .setCustomId("deadline:reenter")
+          .setLabel("Re-enter")
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji("✏️");
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(confirmBtn, reenterBtn);
+        await original.edit({ embeds: [embed], components: [row] });
+      } catch {}
+    }
+
     return;
   }
 
