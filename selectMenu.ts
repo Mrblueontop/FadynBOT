@@ -5,6 +5,7 @@ import {
   askQuestion,
   sendReviewEmbed,
   buildCustomAnswerModal,
+  buildCustomOptionModal,
   MODAL_QUESTION_IDS,
   updateQuestionToAnswered,
 } from "./flows.js";
@@ -18,7 +19,19 @@ export async function handleSelectMenu(interaction: StringSelectMenuInteraction)
     const session = getSession(user.id);
     if (!session || !questionId) return;
 
-    session.answers[questionId] = values.join(", ");
+    const selectedValue = values.join(", ");
+
+    // ── Custom option → open a modal for freeform input ──────────────────────
+    if (selectedValue === "Custom") {
+      const questions = getQuestionsForRoles(session.roles, session.answers);
+      const q = questions.find((q) => q.id === questionId);
+      if (q) {
+        await interaction.showModal(buildCustomOptionModal(q));
+      }
+      return;
+    }
+
+    session.answers[questionId] = selectedValue;
 
     const questions = getQuestionsForRoles(session.roles, session.answers);
     const currentIndex = questions.findIndex((q) => q.id === questionId);
