@@ -4,6 +4,7 @@ import { getQuestionsForRoles } from "./questions.js";
 import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered, updateReferenceEmbed, updateAssetEmbed, buildCloseConfirmPayload } from "./flows.js";
 import { resolveDeadline, formatDeadlineTimestamp } from "./deadline.js";
 import { validateImageUrls } from "./imageValidator.js";
+import { validatePaymentSplit } from "./pricing.js";
 
 export async function handleMessage(message: Message): Promise<void> {
   // Only handle DMs
@@ -370,29 +371,32 @@ Please upload a clear image, or type **skip** to continue without assets.",
   }
 
 
-  // ── paymentSplit question: validate percentages sum to 100 ───────────────
+  // ── paymentSplit question: AI-powered split validator ────────────────────
   if (currentQ.id === "paymentSplit") {
     const raw = message.content.trim();
     if (!raw) {
-      await message.reply({ content: "⚠️ Please enter the payment split percentages before continuing." }).catch(() => {});
+      await message.reply({ content: "⚠️ Please enter how you'd like to split the payment." }).catch(() => {});
       return;
     }
 
-    // Extract all numbers from the answer
-    const nums = [...raw.matchAll(/\d+/g)].map((m) => parseInt(m[0]!, 10));
-    const total = nums.reduce((a, b) => a + b, 0);
+    // Show a thinking reaction while AI validates
+    await message.react("⏳").catch(() => {});
+    const selectedMethods = (session.answers["paymentMethod"] ?? "").split(", ").filter(Boolean);
+    const validation = await validatePaymentSplit(raw, selectedMethods);
+    await message.reactions.removeAll().catch(() => {});
 
-    // Validate: must have at least one number and sum to 100
-    if (nums.length === 0 || total !== 100) {
+    if (!validation.valid) {
       await message.reply({
         content:
-          `⚠️ Your percentages add up to **${total || 0}%** — they must total exactly **100%**.\n\n` +
-          "Example: `PayPal: 60, Robux: 40`",
+          `⚠️ ${validation.reason}\n\n` +
+          `Example: \`PayPal: 60%, Robux: 40%\``,
       }).catch(() => {});
       return;
     }
 
-    // Valid — fall through to the standard answer-saving logic below
+    // Override the answer with the AI-normalized version so the review looks clean
+    session.answers["paymentSplit"] = validation.normalized ?? raw;
+    // Fall through to the standard answer-saving logic below (but use normalized value)
   }
 
   // ── Deadline question: AI resolver → in-place edit with Confirm / Re-enter ─
