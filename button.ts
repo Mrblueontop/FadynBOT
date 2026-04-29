@@ -1,10 +1,14 @@
 import {
   type ButtonInteraction,
   EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
 } from "discord.js";
 import { getSession, updateSession, clearSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
+import { formatDeadlineTimestamp } from "./deadline.js";
 import {
   askQuestion,
   sendStartPrompt,
@@ -288,6 +292,68 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     if (!channel || channel.type !== ChannelType.GuildText) return;
     await interaction.deferUpdate();
     await channel.delete().catch(() => {});
+    return;
+  }
+
+
+  // ── deadline:confirm — user confirmed the AI-resolved timestamp ──────────
+  if (customId === "deadline:confirm") {
+    const session = getSession(user.id);
+    if (!session || !session.deadlineTimestamp) return;
+
+    session.deadlinePending = false;
+    updateSession(session);
+
+    const questions = getQuestionsForRoles(session.roles, session.answers);
+    const idx = questions.findIndex((q) => q.id === "deadline");
+
+    // Edit message to green confirmed state
+    const formattedTs = formatDeadlineTimestamp(session.deadlineTimestamp);
+    const embed = new EmbedBuilder()
+      .setDescription(
+        "## 11/12 — Deadline\n" +
+        "### ⏰ When do you need this by?"
+      )
+      .setColor(0x2ecc71)
+      .addFields({ name: "✅ Your deadline", value: formattedTs, inline: false })
+      .setFooter({ text: `Question ${idx + 1} of ${questions.length} — answered` });
+
+    await interaction.update({ embeds: [embed], components: [] });
+
+    // Advance flow
+    const dm = await user.createDM();
+    await advanceOrReview(interaction, session);
+    return;
+  }
+
+  // ── deadline:reenter — user wants to type a different deadline ───────────
+  if (customId === "deadline:reenter") {
+    const session = getSession(user.id);
+    if (!session) return;
+
+    session.deadlineTimestamp = undefined;
+    session.deadlinePending   = false;
+    updateSession(session);
+
+    const questions = getQuestionsForRoles(session.roles, session.answers);
+    const idx = questions.findIndex((q) => q.id === "deadline");
+
+    const embed = new EmbedBuilder()
+      .setDescription(
+        "## 11/12 — Deadline\n" +
+        "### ⏰ When do you need this by?\n\n" +
+        "No problem — please reply with a clearer deadline.\n\n" +
+        "**Examples:**\n" +
+        "• `December 25th`\n" +
+        "• `End of next week`\n" +
+        "• `In 2 weeks`\n" +
+        "• `ASAP` *(treated as 3 days from now)*\n\n" +
+        "💬 *Reply to this message with your deadline.*"
+      )
+      .setColor(0x9b59b6)
+      .setFooter({ text: `Question ${idx + 1} of ${questions.length} • Reply with your deadline` });
+
+    await interaction.update({ embeds: [embed], components: [] });
     return;
   }
 
