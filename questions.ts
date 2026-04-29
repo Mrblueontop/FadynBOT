@@ -99,7 +99,7 @@ export function buildAnimationPrompt(answers: Record<string, string>): string {
     const btnList = buttons.map((b) => `\`${b}\``).join(", ");
     const frmList = frames.map((f) => `\`${f}\``).join(", ");
     return (
-      "Do you want your UI to be animated?\n\n" +
+      "**Do you want your UI to be animated?**\n\n" +
       "We detected these elements:\n" +
       `• **Buttons:** ${btnList}\n` +
       `• **Frames:** ${frmList}` +
@@ -110,7 +110,7 @@ export function buildAnimationPrompt(answers: Record<string, string>): string {
   if (hasBtns) {
     const btnList = buttons.map((b) => `\`${b}\``).join(", ");
     return (
-      "Do you want your buttons to be animated?\n\n" +
+      "**Do you want your buttons to be animated?**\n\n" +
       `We detected these buttons: ${btnList}` +
       ANIM_NOTE
     );
@@ -118,7 +118,7 @@ export function buildAnimationPrompt(answers: Record<string, string>): string {
 
   const frmList = frames.map((f) => `\`${f}\``).join(", ");
   return (
-    "Do you want your frames to be animated?\n\n" +
+    "**Do you want your frames to be animated?**\n\n" +
     `We detected these frames: ${frmList}` +
     ANIM_NOTE
   );
@@ -216,7 +216,7 @@ export const commissionQuestions: Question[] = [
   // ── Step 6: Animation — dynamic, shown if any UI elements were detected ───
   {
     id: "animation",
-    prompt: "Do you want your UI to be animated?", // overridden dynamically at runtime
+    prompt: "**Do you want your UI to be animated?**", // overridden dynamically at runtime
     answerType: {
       kind: "choice",
       options: [
@@ -254,10 +254,12 @@ export const commissionQuestions: Question[] = [
     id: "paymentMethod",
     prompt:
       "💳 **How will you pay?**\n\n" +
-      "Select your preferred payment method.\n\n" +
+      "Select one or more payment methods you're happy with.\n\n" +
       "*Final pricing will be confirmed after review.*",
     answerType: {
       kind: "dropdown",
+      minValues: 1,
+      maxValues: 3,
       options: [
         { label: "PayPal (USD)", value: "PayPal",    description: "Pay via PayPal in USD" },
         { label: "Robux",        value: "Robux",     description: "Pay in Roblox Robux" },
