@@ -191,6 +191,62 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     return;
   }
 
+
+  // ── custom_option_modal — "Custom" dropdown freeform description ──────────
+  if (customId.startsWith("custom_option_modal:")) {
+    const questionId = customId.slice(20);
+    const session = getSession(user.id);
+    if (!session || !questionId) return;
+
+    const value = interaction.fields.getTextInputValue("custom_value").trim();
+    if (!value) return;
+
+    // Store as "Custom: <their description>" so the review is clear
+    session.answers[questionId] = `Custom: ${value}`;
+
+    const questions = getQuestionsForRoles(session.roles, session.answers);
+    const currentIndex = questions.findIndex((q) => q.id === questionId);
+
+    // Edit the original question message to green answered state
+    const dm = await user.createDM();
+    const msgId = session.questionMessageIds?.[questionId];
+    if (msgId && currentIndex >= 0) {
+      const q = questions[currentIndex]!;
+      await updateQuestionToAnswered(dm, msgId, q, session.answers[questionId]!, currentIndex, questions.length);
+    }
+
+    if (session.step === "editing_from_review") {
+      session.step = "review";
+      session.editingQuestionId = undefined;
+      updateSession(session);
+      await interaction.deferUpdate();
+      const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
+      session.reviewMessageId = msg.id;
+      updateSession(session);
+      return;
+    }
+
+    const next = session.currentQuestionIndex + 1;
+    if (next >= questions.length) {
+      session.step = "review";
+      updateSession(session);
+      await interaction.deferUpdate();
+      const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
+      session.reviewMessageId = msg.id;
+      updateSession(session);
+    } else {
+      session.currentQuestionIndex = next;
+      updateSession(session);
+      await interaction.deferUpdate();
+      const q = questions[next]!;
+      const msgOut = await askQuestion(dm, q, next, questions.length, session);
+      if (!session.questionMessageIds) session.questionMessageIds = {};
+      session.questionMessageIds[q.id] = msgOut.id;
+      updateSession(session);
+    }
+    return;
+  }
+
   // ── edit_modal — edit answer from review ──────────────────────────────────
   if (customId.startsWith("edit_modal:")) {
     const questionId = customId.slice(11);
