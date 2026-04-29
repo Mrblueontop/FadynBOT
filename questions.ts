@@ -84,9 +84,7 @@ export function getDetectedFrames(answers: Record<string, string>): string[] {
 }
 
 const ANIM_NOTE =
-  "\n\n> 💡 **Note:** Animations are created using AI-generated scripts that are " +
-  "fully integrated with your UI. Adding animation may come at an **extra cost**, " +
-  "which will be confirmed before work begins.";
+  "\n\n> 💡 **Note:** Animations use AI-generated scripts fully integrated into your UI. Extra cost may apply.";
 
 /**
  * Builds the animation question prompt dynamically from detected UI elements.
@@ -101,11 +99,10 @@ export function buildAnimationPrompt(answers: Record<string, string>): string {
     const btnList = buttons.map((b) => `\`${b}\``).join(", ");
     const frmList = frames.map((f) => `\`${f}\``).join(", ");
     return (
-      "✨ **Animation**\n" +
-      "We detected the following UI elements:\n\n" +
+      "Do you want your UI to be animated?\n\n" +
+      "We detected these elements:\n" +
       `• **Buttons:** ${btnList}\n` +
-      `• **Frames:** ${frmList}\n\n` +
-      "Would you like any of these to be animated?" +
+      `• **Frames:** ${frmList}` +
       ANIM_NOTE
     );
   }
@@ -113,18 +110,16 @@ export function buildAnimationPrompt(answers: Record<string, string>): string {
   if (hasBtns) {
     const btnList = buttons.map((b) => `\`${b}\``).join(", ");
     return (
-      "✨ **Animation**\n" +
-      `We detected these buttons: ${btnList}\n\n` +
-      "Do you want your buttons to be animated?" +
+      "Do you want your buttons to be animated?\n\n" +
+      `We detected these buttons: ${btnList}` +
       ANIM_NOTE
     );
   }
 
   const frmList = frames.map((f) => `\`${f}\``).join(", ");
   return (
-    "✨ **Animation**\n" +
-    `We detected these frames: ${frmList}\n\n` +
-    "Do you want your frames to be animated?" +
+    "Do you want your frames to be animated?\n\n" +
+    `We detected these frames: ${frmList}` +
     ANIM_NOTE
   );
 }
@@ -135,30 +130,11 @@ export function buildAnimationPrompt(answers: Record<string, string>): string {
  * Both → 4-option choice.
  */
 export function buildAnimationOptions(
-  answers: Record<string, string>
+  _answers: Record<string, string>
 ): { label: string; value: string; emoji?: string }[] {
-  const hasBtns = hasButtons(answers);
-  const hasFrms = hasFrames(answers);
-
-  if (hasBtns && hasFrms) {
-    return [
-      { label: "Animate buttons only", value: "Buttons only", emoji: "🔘" },
-      { label: "Animate frames only",  value: "Frames only",  emoji: "🖼️" },
-      { label: "Animate both",         value: "Both",         emoji: "✨" },
-      { label: "No animation",         value: "None",         emoji: "🚫" },
-    ];
-  }
-
-  if (hasBtns) {
-    return [
-      { label: "Yes, animate my buttons", value: "Buttons only", emoji: "✨" },
-      { label: "No animation",            value: "None",          emoji: "🚫" },
-    ];
-  }
-
   return [
-    { label: "Yes, animate my frames", value: "Frames only", emoji: "✨" },
-    { label: "No animation",           value: "None",         emoji: "🚫" },
+    { label: "Yes", value: "Yes", emoji: "✨" },
+    { label: "No",  value: "No",  emoji: "🚫" },
   ];
 }
 
@@ -170,12 +146,8 @@ export const commissionQuestions: Question[] = [
   {
     id: "projectTitle",
     prompt:
-      "## 1/11 — Project Title\n" +
-      "### 📌 What is your project called?\n\n" +
-      "Provide the title of your commission or project.\n" +
-      "This can be your Roblox game name, working title, or any label you want us to use.\n\n" +
-      "**Purpose:** Helps us correctly organize and identify your request.\n\n" +
-      "💬 *Reply using the Discord reply system so your answer links to this step.*",
+      "📌 **What is your project called?**\n\n" +
+      "Provide the name of your Roblox game or project. A working title is fine.",
     answerType: { kind: "text", maxLength: 100 },
   },
 
@@ -183,11 +155,9 @@ export const commissionQuestions: Question[] = [
   {
     id: "projectDescription",
     prompt:
-      "## 2/11 — Project Description *(Optional)*\n" +
-      "### 🧠 Tell us about your project\n\n" +
-      "Briefly explain what you're building, what it does, and your overall idea or vision.\n\n" +
-      "**If not needed:** Type `N/A`\n\n" +
-      "💬 *Reply to continue.*",
+      "🧠 **Tell us about your project** *(optional)*\n\n" +
+      "Briefly explain what you're building and what it does.\n\n" +
+      "Type `N/A` to skip.",
     answerType: { kind: "text", optional: true, maxLength: 1000 },
   },
 
@@ -195,13 +165,11 @@ export const commissionQuestions: Question[] = [
   {
     id: "uiRequirementType",
     prompt:
-      "## 3/11 — UI Elements Needed\n" +
-      "### 🎨 What do you need designed?\n\n" +
+      "🎨 **What do you need designed?**\n\n" +
       "Click **Fill In** and list your UI requirements:\n\n" +
       "• 🟦 **Buttons** (e.g. `Play, Shop, Settings`)\n" +
       "• 🟩 **Frames** (e.g. `Main Menu, HUD, Inventory`)\n\n" +
-      "Leave blank anything you don't need.\n\n" +
-      "💬 *Use the Fill In button to submit.*",
+      "Leave blank anything you don't need.",
     answerType: {
       kind: "choice",
       options: [{ label: "Fill In", value: "open_modal", emoji: "📋" }],
@@ -212,10 +180,8 @@ export const commissionQuestions: Question[] = [
   {
     id: "buttonStyle",
     prompt:
-      "## 4/11 — Button Style\n" +
-      "### 🔘 Choose button design style\n\n" +
-      "Select how you want your buttons to look (shape, feel, visual style).\n\n" +
-      "💬 *Pick one option from the dropdown.*",
+      "🔘 **Choose your button style**\n\n" +
+      "Select how you want your buttons to look.",
     answerType: {
       kind: "dropdown",
       options: [
@@ -232,10 +198,8 @@ export const commissionQuestions: Question[] = [
   {
     id: "overallStyle",
     prompt:
-      "## 5/11 — Overall Style\n" +
-      "### 🖼️ UI Theme & Direction\n\n" +
-      "Choose the main visual style for your interface (mood, theme, layout direction).\n\n" +
-      "💬 *Select one option to proceed.*",
+      "🖼️ **Choose your UI theme**\n\n" +
+      "Select the main visual style for your interface.",
     answerType: {
       kind: "dropdown",
       options: [
@@ -252,91 +216,44 @@ export const commissionQuestions: Question[] = [
   // ── Step 6: Animation — dynamic, shown if any UI elements were detected ───
   {
     id: "animation",
-    prompt:
-      "## 6/11 — Animations\n" +
-      "### ✨ UI Motion Effects\n\n" +
-      "Would you like animations applied to your UI?\n\n" +
-      "Includes:\n" +
-      "• Button hover effects\n" +
-      "• Frame transitions\n" +
-      "• Interactive motion\n\n" +
-      "⚠️ *Note: Complex animations may affect pricing.*\n\n" +
-      "💬 *Select an option.*",
+    prompt: "Do you want your UI to be animated?", // overridden dynamically at runtime
     answerType: {
       kind: "choice",
       options: [
-        { label: "Yes", value: "Yes",  emoji: "✨" },
-        { label: "No",  value: "None", emoji: "🚫" },
+        { label: "Yes", value: "Yes", emoji: "✨" },
+        { label: "No",  value: "No",  emoji: "🚫" },
       ],
     },
     showIf: (a) => hasButtons(a) || hasFrames(a),
   },
 
-  // ── Step 7: Specific Colors ───────────────────────────────────────────────
+  // ── Step 7: Colors (REQUIRED) ─────────────────────────────────────────────
   {
     id: "colorScheme",
     prompt:
-      "## 7/11 — Colors\n" +
-      "### 🎨 Design Color Preferences\n\n" +
-      "List any preferred colors, hex codes, or themes.\n\n" +
-      "**If none:** Type `N/A`\n\n" +
-      "💬 *Reply to continue.*",
-    answerType: { kind: "text", optional: true, maxLength: 500 },
+      "🎨 **What colors do you want?** *(required)*\n\n" +
+      "List your preferred colors, hex codes, or themes.\n\n" +
+      "Examples: `blue and white`, `#9b59b6`, `dark mode with purple accents`",
+    answerType: { kind: "text", maxLength: 500 },
   },
 
   // ── Step 8: Reference — required, image/video uploads only ───────────────
   {
     id: "reference",
     prompt:
-      "## 8/11 — References *(Required)*\n" +
-      "### 📎 Inspiration & Style References\n\n" +
-      "Upload images or videos that represent your desired UI style.\n\n" +
+      "📎 **Upload your style references** *(required)*\n\n" +
+      "Upload images or videos that show the style you want.\n\n" +
       "• Up to **5 files**\n" +
-      "• Images or videos only\n" +
-      "• Required for accurate design matching\n\n" +
-      "When finished, type: **done**",
+      "• Images or videos only\n\n" +
+      "Type **done** when finished.",
     answerType: { kind: "text", isReference: true, maxLength: 800 } as any,
   },
 
-  // ── Step 9: Assets ────────────────────────────────────────────────────────
-  {
-    id: "hasAssets",
-    prompt:
-      "## 9/11 — Assets\n" +
-      "### 🧩 Existing Resources\n\n" +
-      "Do you already have assets we should use?\n\n" +
-      "Examples:\n" +
-      "• Logos\n" +
-      "• Icons\n" +
-      "• Custom UI graphics",
-    answerType: {
-      kind: "choice",
-      options: [
-        { label: "Yes, I have assets", value: "Yes", emoji: "✅" },
-        { label: "No, start fresh",    value: "No",  emoji: "❌" },
-      ],
-    },
-  },
-
-  // ── Step 9b: Asset Upload — only if user said Yes ─────────────────────────
-  {
-    id: "assetFiles",
-    prompt:
-      "## 9b — Asset Upload\n" +
-      "### 📤 Upload your files\n\n" +
-      "• Max **5 files**\n" +
-      "• Images or videos only\n\n" +
-      "Type **done** when finished, or **skip** to continue without uploading.",
-    answerType: { kind: "text", isAssets: true, optional: true, maxLength: 2000 } as any,
-    showIf: (a) => a["hasAssets"] === "Yes",
-  },
-
-  // ── Step 10: Payment Method ───────────────────────────────────────────────
+  // ── Step 9: Payment Method ────────────────────────────────────────────────
   {
     id: "paymentMethod",
     prompt:
-      "## 10/11 — Payment Method\n" +
-      "### 💳 How will you pay?\n\n" +
+      "💳 **How will you pay?**\n\n" +
       "Select your preferred payment method.\n\n" +
       "*Final pricing will be confirmed after review.*",
     answerType: {
@@ -349,33 +266,23 @@ export const commissionQuestions: Question[] = [
     },
   },
 
-  // ── Step 11: Deadline ─────────────────────────────────────────────────────
+  // ── Step 10: Deadline ─────────────────────────────────────────────────────
   {
     id: "deadline",
     prompt:
-      "## 11/12 — Deadline\n" +
-      "### ⏰ When do you need this by?\n\n" +
-      "Tell us your deadline or timeframe in plain language.\n\n" +
-      "**Examples:**\n" +
-      "• `ASAP`\n" +
-      "• `Before Christmas`\n" +
-      "• `End of next week`\n" +
-      "• `By December 25th`\n\n" +
-      "💬 *Reply with your deadline to continue.*",
+      "⏰ **When do you need this by?**\n\n" +
+      "Tell us your deadline in plain language.\n\n" +
+      "Examples: `ASAP`, `Before Christmas`, `End of next week`, `By December 25th`",
     answerType: { kind: "text", maxLength: 200 },
   },
 
-  // ── Step 12: Extra Info ───────────────────────────────────────────────────
+  // ── Step 11: Extra Info ───────────────────────────────────────────────────
   {
     id: "extraInfo",
     prompt:
-      "## 12/12 — Extra Info\n" +
-      "### 📝 Additional Notes\n\n" +
-      "Add anything else we should know:\n\n" +
-      "• Special requests\n" +
-      "• Extra instructions\n" +
-      "• Any other context\n\n" +
-      "**If nothing:** Type `N/A`",
+      "📝 **Anything else we should know?** *(optional)*\n\n" +
+      "Add any special requests, extra instructions, or additional context.\n\n" +
+      "Type `N/A` if nothing to add.",
     answerType: { kind: "text", optional: true, maxLength: 1000 },
   },
 ];
