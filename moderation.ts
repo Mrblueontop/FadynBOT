@@ -296,19 +296,21 @@ export function buildModerationWarningPayload(
     .setTitle("⚠️ Please Fix Your Answers")
     .setDescription(
       [
-        "Some of your answers don't look right. Please edit them before submitting.",
+        "Some of your answers don't look correct. Click **Fix Now** to update the flagged fields — they'll be pre-filled so you can quickly edit them.",
         "",
         ...flagLines,
         "",
-        "Hit **Edit Answers** to go back and fix them.",
+        "Your other answers are saved. Only the flagged fields need to be updated.",
+        "",
+        "Your progress is saved — just fix the flagged fields.",
       ].join("\n")
     )
     .setColor(0xe67e22)
-    .setFooter({ text: "Your progress is saved — just fix the flagged fields." });
+    .setFooter({ text: "Your progress is saved — only fix the flagged fields." });
 
-  const editBtn = new ButtonBuilder()
-    .setCustomId("review:edit")
-    .setLabel("Edit Answers")
+  const fixBtn = new ButtonBuilder()
+    .setCustomId("moderation:fix")
+    .setLabel("Fix Now")
     .setStyle(ButtonStyle.Primary)
     .setEmoji("✏️");
 
@@ -318,7 +320,7 @@ export function buildModerationWarningPayload(
     .setStyle(ButtonStyle.Danger)
     .setEmoji("✖️");
 
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(editBtn, cancelBtn);
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(fixBtn, cancelBtn);
 
   return { embeds: [embed], components: [row] };
 }
