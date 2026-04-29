@@ -21,10 +21,9 @@ import {
   MODAL_QUESTION_IDS,
   buildUiElementsModalPage1,
   buildUiElementsModalPage2,
-  buildUiElementsAfterAnswerRow,
   buildCloseConfirmPayload,
-  disableHasAssetsButtons,
   buildModerationFixModal,
+  updateAnimationToAnswered,
 } from "./flows.js";
 
 export async function handleButton(interaction: ButtonInteraction): Promise<void> {
@@ -150,31 +149,19 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
 
     session.answers[questionId] = value;
 
-    // ── hasAssets: Yes — disable buttons, then send assetFiles prompt ────────
-    if (questionId === "hasAssets" && value === "Yes") {
-      updateSession(session);
-      const questions = getQuestionsForRoles(session.roles, session.answers);
-      const hasAssetsIndex = questions.findIndex((q) => q.id === "hasAssets");
+    const questions = getQuestionsForRoles(session.roles, session.answers);
+    const currentIndex = questions.findIndex((q) => q.id === questionId);
+    const dm = await user.createDM();
 
-      // Disable the Yes/No buttons on the hasAssets message
-      const hasAssetsMsgId = session.questionMessageIds?.["hasAssets"];
-      const dm = await user.createDM();
-      if (hasAssetsMsgId && hasAssetsIndex >= 0) {
-        await disableHasAssetsButtons(dm, hasAssetsMsgId, hasAssetsIndex, questions.length);
+    // ── animation: disable both buttons immediately after selection ───────────
+    if (questionId === "animation") {
+      const msgId = session.questionMessageIds?.[questionId];
+      if (msgId && currentIndex >= 0) {
+        const { buildAnimationPrompt } = await import("./questions.js");
+        const prompt = buildAnimationPrompt(session.answers);
+        await updateAnimationToAnswered(dm, msgId, value, prompt, currentIndex, questions.length);
       }
-
-      // Advance to assetFiles question
-      const assetFilesIndex = questions.findIndex((q) => q.id === "assetFiles");
-      if (assetFilesIndex >= 0) {
-        session.currentQuestionIndex = assetFilesIndex;
-        updateSession(session);
-        const assetQ = questions[assetFilesIndex]!;
-        await interaction.deferUpdate();
-        const msgOut = await askQuestion(dm, assetQ, assetFilesIndex, questions.length, session);
-        if (!session.questionMessageIds) session.questionMessageIds = {};
-        session.questionMessageIds[assetQ.id] = msgOut.id;
-        updateSession(session);
-      }
+      await advanceOrReview(interaction, session);
       return;
     }
 
