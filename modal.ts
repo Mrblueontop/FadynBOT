@@ -126,15 +126,34 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
     // Silently acknowledge the modal
     await interaction.deferUpdate();
 
-    // Edit the original Step 4 message in-place to green + Edit/Next buttons
     const dm = await user.createDM();
+    const questions = getQuestionsForRoles(session.roles, session.answers);
+
+    // Edit the original Step 4 message in-place to green (no buttons)
     const msgId = session.questionMessageIds?.["uiRequirementType"];
     if (msgId) {
-      const questions = getQuestionsForRoles(session.roles, session.answers);
       const idx = questions.findIndex((q) => q.id === "uiRequirementType");
       if (idx >= 0) {
         await updateStep4ToAnswered(dm, msgId, session.answers["uiRequirementType"]!, idx, questions.length);
       }
+    }
+
+    // Auto-advance to the next question (replaces the removed Next button)
+    const next = session.currentQuestionIndex + 1;
+    if (next >= questions.length) {
+      session.step = "review";
+      updateSession(session);
+      const msg = await sendReviewEmbed(dm, session, !session.finalEditUsed);
+      session.reviewMessageId = msg.id;
+      updateSession(session);
+    } else {
+      session.currentQuestionIndex = next;
+      updateSession(session);
+      const q = questions[next]!;
+      const msgOut = await askQuestion(dm, q, next, questions.length, session);
+      if (!session.questionMessageIds) session.questionMessageIds = {};
+      session.questionMessageIds[q.id] = msgOut.id;
+      updateSession(session);
     }
 
     return;
