@@ -176,6 +176,7 @@ export async function askQuestion(
     const dynamicOptions  = buildAnimationOptions(session.answers);
     effectiveQ = { ...q, prompt: dynamicPrompt, answerType: { kind: "choice", options: dynamicOptions } };
     embed.setDescription(dynamicPrompt);
+    embed.setFooter(null); // no "Question N of N • Please reply…" footer on animation
   }
 
   // ── Choice (buttons) ──────────────────────────────────────────────────────
@@ -279,7 +280,55 @@ export async function updateQuestionToAnswered(
   }
 }
 
-// ─── Update Step 4 to answered (keeps Edit button, no Next) ──────────────────
+// ─── Update animation question to disabled answered state ─────────────────────
+
+/**
+ * Edits the animation question message in-place after the user picks Yes or No.
+ * Both buttons are shown but disabled — the selected one is highlighted,
+ * the other is greyed out. No further interaction is possible.
+ */
+export async function updateAnimationToAnswered(
+  channel: AnyChannel,
+  messageId: string,
+  selectedValue: string,
+  prompt: string,
+  index: number,
+  total: number
+): Promise<void> {
+  try {
+    const msg = await channel.messages.fetch(messageId);
+
+    const yesBtn = new ButtonBuilder()
+      .setCustomId("animation:yes_disabled")
+      .setLabel("Yes")
+      .setEmoji("✨")
+      .setStyle(selectedValue === "Yes" ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setDisabled(true);
+
+    const noBtn = new ButtonBuilder()
+      .setCustomId("animation:no_disabled")
+      .setLabel("No")
+      .setEmoji("🚫")
+      .setStyle(selectedValue === "No" ? ButtonStyle.Danger : ButtonStyle.Secondary)
+      .setDisabled(true);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(yesBtn, noBtn);
+
+    const embed = new EmbedBuilder()
+      .setDescription(prompt)
+      .setColor(0x2ecc71)
+      .addFields({
+        name: "✅ Your answer",
+        value: selectedValue === "Yes" ? "Yes — animated ✨" : "No animation 🚫",
+        inline: false,
+      })
+      .setFooter({ text: `Question ${index + 1} of ${total} — answered` });
+
+    await msg.edit({ embeds: [embed], components: [row] });
+  } catch {
+    // Message deleted or too old — silently skip
+  }
+}
 
 /**
  * Edits the Step 4 (UI Frames Needed) question message in-place after a valid
@@ -299,31 +348,12 @@ export async function updateStep4ToAnswered(
     const msg = await channel.messages.fetch(messageId);
 
     const embed = new EmbedBuilder()
-      .setDescription(
-        [
-          "📝 **Step 4: UI Frames Needed**",
-          "Your UI elements have been saved. Click **Edit** if you need to change anything, then continue with the next question.",
-        ].join("\n")
-      )
+      .setDescription("📝 **Step 4: UI Frames Needed**\nYour UI elements have been saved.")
       .setColor(0x2ecc71)
       .addFields({ name: "✅ Your answer", value: truncate(answer, 1024), inline: false })
       .setFooter({ text: `Question ${index + 1} of ${total} — answered` });
 
-    const editBtn = new ButtonBuilder()
-      .setCustomId("ui_elements:edit")
-      .setLabel("Edit")
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji("✏️");
-
-    const nextBtn = new ButtonBuilder()
-      .setCustomId("ui_elements:next")
-      .setLabel("Next Question")
-      .setStyle(ButtonStyle.Success)
-      .setEmoji("✅");
-
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(editBtn, nextBtn);
-
-    await msg.edit({ embeds: [embed], components: [row] });
+    await msg.edit({ embeds: [embed], components: [] });
   } catch {
     // Message deleted or too old — silently skip
   }
