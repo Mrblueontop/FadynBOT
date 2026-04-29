@@ -268,13 +268,28 @@ export const commissionQuestions: Question[] = [
     },
   },
 
+  // ── Step 9b: Payment Split — only when multiple methods selected ──────────
+  {
+    id: "paymentSplit",
+    prompt:
+      "💳 **How would you like to split the payment?**\n\n" +
+      "You selected multiple payment methods. Enter the percentage for each — must add up to **100**. Whole numbers only.\n\n" +
+      "**Example:** `PayPal: 60, Robux: 40`\n\n" +
+      "Use the exact method names you selected.",
+    answerType: { kind: "text", maxLength: 200 },
+    showIf: (a) => {
+      const methods = (a["paymentMethod"] ?? "").split(", ").filter(Boolean);
+      return methods.length > 1;
+    },
+  },
+
   // ── Step 10: Deadline ─────────────────────────────────────────────────────
   {
     id: "deadline",
     prompt:
       "⏰ **When do you need this by?**\n\n" +
-      "Tell us your deadline in plain language.\n\n" +
-      "Examples: `ASAP`, `Before Christmas`, `End of next week`, `By December 25th`",
+      "Tell us your deadline in plain language. Deadlines automatically adjust based on current workload and availability.\n\n" +
+      "Examples: `ASAP` *(rush order — prioritised based on availability)*, `Before Christmas`, `End of next week`, `By December 25th`",
     answerType: { kind: "text", maxLength: 200 },
   },
 
