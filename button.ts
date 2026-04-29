@@ -9,6 +9,7 @@ import {
 import { getSession, updateSession, clearSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
 import { formatDeadlineTimestamp } from "./deadline.js";
+import { getPriceBreakdown } from "./pricing.js";
 import {
   askQuestion,
   sendStartPrompt,
@@ -255,6 +256,29 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
   // ── app:close:cancel — user chose to keep going ───────────────────────────
   if (customId === "app:close:cancel") {
     await interaction.update({ embeds: [], components: [], content: "Got it — carry on! 👍" });
+    return;
+  }
+
+  // ── price:breakdown — show per-item price breakdown ephemerally ──────────
+  if (customId.startsWith("price:breakdown:")) {
+    const messageId = customId.slice(16);
+    const breakdown = getPriceBreakdown(messageId);
+
+    if (!breakdown) {
+      await interaction.reply({
+        content: "⚠️ Breakdown data isn't available (the bot may have restarted since this order was submitted).",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle("💰 Price Breakdown")
+      .setDescription(breakdown)
+      .setColor(0x9b59b6)
+      .setFooter({ text: "Prices are estimates — final amount agreed in ticket" });
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
     return;
   }
 
