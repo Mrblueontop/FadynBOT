@@ -30,7 +30,7 @@ Your job: convert their description into a concrete Unix timestamp (seconds sinc
 
 Rules:
 - Return the END of that day (23:59:59) in UTC unless they say a specific time.
-- "ASAP" or "as soon as possible" → 3 days from today.
+- "ASAP" or "as soon as possible" → 2 days from today (treated as a rush order; availability permitting).
 - "No rush", "whenever", "no deadline" → return null.
 - "N/A" or blank → return null.
 - Vague answers like "soon", "sometime", "idk" → return null (user must clarify).
