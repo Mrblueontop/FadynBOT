@@ -3,6 +3,7 @@ import { getSession, updateSession } from "./data.js";
 import { getQuestionsForRoles } from "./questions.js";
 import { askQuestion, sendReviewEmbed, sendPortfolioAddMorePrompt, updateQuestionToAnswered, updateReferenceEmbed, updateAssetEmbed, buildCloseConfirmPayload } from "./flows.js";
 import { resolveDeadline, formatDeadlineTimestamp } from "./deadline.js";
+import { validateImageUrls } from "./imageValidator.js";
 
 export async function handleMessage(message: Message): Promise<void> {
   // Only handle DMs
@@ -34,7 +35,9 @@ export async function handleMessage(message: Message): Promise<void> {
   // Reference and asset upload questions accept free-sent messages (no reply needed)
   const isFreeUploadQuestion = currentQ.id === "reference" || currentQ.id === "assetFiles";
   const expectedMsgId = session.questionMessageIds?.[currentQ.id];
-  if (!isFreeUploadQuestion && expectedMsgId && message.reference?.messageId !== expectedMsgId) return;
+  // Only drop if replying to a DIFFERENT question message — free DM messages always accepted
+  const repliedToId = message.reference?.messageId;
+  if (!isFreeUploadQuestion && expectedMsgId && repliedToId && repliedToId !== expectedMsgId) return;
 
   // Only handle text/image/media/link type questions via message
   const kind = currentQ.answerType.kind;
@@ -76,6 +79,34 @@ export async function handleMessage(message: Message): Promise<void> {
     let combined = existing;
     if (validAttachments.length > 0) {
       const newUrls = validAttachments.map((a) => a.url);
+
+      // ── AI image validation (Cloudmersive) ─────────────────────────────────
+      // Only validate image attachments (videos are skipped — Cloudmersive is image-only)
+      const imageUrls = validAttachments
+        .filter((a) => /^image\//.test(a.contentType ?? ""))
+        .map((a) => a.url);
+
+      if (imageUrls.length > 0) {
+        await message.react("🔍").catch(() => {});
+        const results = await validateImageUrls(imageUrls);
+        await message.reactions.removeAll().catch(() => {});
+
+        const failed = [...results.entries()].filter(([, r]) => !r.valid);
+        if (failed.length > 0) {
+          await message.reply({
+            content:
+              "⚠️ One or more of your reference images couldn't be verified:
+" +
+              failed.map(([, r]) => ).join("
+") +
+              "
+
+Please upload a clear, recognisable reference image.",
+          }).catch(() => {});
+          return;
+        }
+      }
+
       combined = [...existing, ...newUrls].slice(0, MAX_REF);
     }
 
@@ -215,6 +246,33 @@ export async function handleMessage(message: Message): Promise<void> {
     let combined = existing;
     if (validAttachments.length > 0) {
       const newUrls = validAttachments.map((a) => a.url);
+
+      // ── AI image validation (Cloudmersive) ─────────────────────────────────
+      const imageUrls = validAttachments
+        .filter((a) => /^image\//.test(a.contentType ?? ""))
+        .map((a) => a.url);
+
+      if (imageUrls.length > 0) {
+        await message.react("🔍").catch(() => {});
+        const results = await validateImageUrls(imageUrls);
+        await message.reactions.removeAll().catch(() => {});
+
+        const failed = [...results.entries()].filter(([, r]) => !r.valid);
+        if (failed.length > 0) {
+          await message.reply({
+            content:
+              "⚠️ One or more of your asset images couldn't be verified:
+" +
+              failed.map(([, r]) => ).join("
+") +
+              "
+
+Please upload a clear image, or type **skip** to continue without assets.",
+          }).catch(() => {});
+          return;
+        }
+      }
+
       combined = [...existing, ...newUrls].slice(0, MAX_ASSETS);
     }
 
