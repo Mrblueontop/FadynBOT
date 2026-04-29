@@ -42,6 +42,7 @@ import { getQuestionsForRoles, type Question, resolveAnswerLabel, buildAnimation
 import { config } from "./config.js";
 import { calculatePrice, buildPriceEmbedFields } from "./pricing.js";
 import { moderateAnswers, buildModerationWarningPayload } from "./moderation.js";
+import { formatDeadlineTimestamp } from "./deadline.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -109,31 +110,37 @@ export function buildModerationFixModal(
  */
 export async function sendStartPrompt(dm: DMChannel): Promise<Message> {
   const embed = new EmbedBuilder()
-    .setTitle("Fadyn Works")
+    .setTitle("👋 Commission Request")
     .setDescription(
       [
-        "**Are you sure you want to start an order?**",
+        "Hey! Thanks for reaching out about a UI commission.",
         "",
-        "Once you start the order, you will be asked a series of questions — some required, some optional. Your answers to these questions will determine the price of the order.",
+        "**Before we begin, please have the following ready:**",
+        "› A description of your game and what it does",
+        "› Reference images or links showing the style you want",
+        "› Any existing assets (logos, icons, etc.) if applicable",
         "",
-        "You have **15 minutes** to answer each question. If you take too long on any question, your application will be canceled, and you will need to restart.",
+        "**What to expect:**",
+        "› The form takes about **2–3 minutes** to complete",
+        "› All questions are required unless stated otherwise",
+        "› Type `cancel`, `close`, or `end` at any time to stop",
         "",
-        "If you wish to stop the application while it is in progress, feel free to send `cancel` or `end` at any time.",
+        "Hit **Start** when you're ready to begin! 🚀",
       ].join("\n")
     )
     .setColor(0x9b59b6)
-    .setFooter({ text: "Fadyn Works • Click Start to begin your order" });
+    .setFooter({ text: "Commission Request • Step 1 starts after you click Start" });
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("app:start")
-      .setLabel("Start")
+      .setLabel("Start Request")
       .setStyle(ButtonStyle.Success)
-      .setEmoji("✅"),
+      .setEmoji("🚀"),
     new ButtonBuilder()
       .setCustomId("app:cancel")
       .setLabel("Cancel")
-      .setStyle(ButtonStyle.Danger)
+      .setStyle(ButtonStyle.Secondary)
       .setEmoji("✖️")
   );
 
@@ -575,6 +582,15 @@ export async function sendReviewEmbed(
     embed.addFields({ name: label, value: display || "—", inline: false });
   }
 
+  // ── Resolved deadline field ──────────────────────────────────────────────
+  if (session.deadlineTimestamp) {
+    embed.addFields({
+      name: "⏰ Deadline",
+      value: formatDeadlineTimestamp(session.deadlineTimestamp),
+      inline: false,
+    });
+  }
+
   // ── AI price estimate ─────────────────────────────────────────────────────
   try {
     const estimate = await calculatePrice(session.answers);
@@ -712,6 +728,15 @@ export async function submitApplication(
     logEmbed.addFields({ name: label, value: truncate(resolveAnswerLabel(q, raw), 1024), inline: false });
   }
 
+  // ── Resolved deadline in log ─────────────────────────────────────────────
+  if (session.deadlineTimestamp) {
+    logEmbed.addFields({
+      name: "⏰ Deadline",
+      value: formatDeadlineTimestamp(session.deadlineTimestamp),
+      inline: false,
+    });
+  }
+
   // ── AI price for the log embed too ───────────────────────────────────────
   try {
     const estimate = await calculatePrice(session.answers);
@@ -810,6 +835,36 @@ export async function submitApplication(
 }
 
 // ─── Modal builders ───────────────────────────────────────────────────────────
+
+
+/**
+ * Modal shown when user picks "Custom" from a dropdown.
+ * Lets them describe their custom preference in plain text.
+ * customId = "custom_option_modal:<questionId>"
+ */
+export function buildCustomOptionModal(q: Question): ModalBuilder {
+  // Extract a clean label from the question prompt header
+  const rawLabel = q.prompt.split("\n")[0]
+    ?.replace(/^#+\s*/, "")        // strip markdown heading #
+    ?.replace(/\d+\/\d+\s*—\s*/, "") // strip "4/12 — "
+    ?.replace(/:[^:]*$/, "")        // strip trailing emoji label e.g. ": Choose…"
+    ?.trim() ?? q.id;
+
+  const label = truncate(`Describe your custom ${rawLabel.toLowerCase()}`, 45);
+
+  const input = new TextInputBuilder()
+    .setCustomId("custom_value")
+    .setLabel(label)
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setPlaceholder("Describe exactly what you want…")
+    .setMaxLength(500);
+
+  return new ModalBuilder()
+    .setCustomId(`custom_option_modal:${q.id}`)
+    .setTitle(truncate(`Custom — ${rawLabel}`, 45))
+    .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input) as any);
+}
 
 /** Generic text-input modal for any question. Always required. */
 export function buildCustomAnswerModal(q: Question): ModalBuilder {
