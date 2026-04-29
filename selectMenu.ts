@@ -70,7 +70,8 @@ export async function handleSelectMenu(interaction: StringSelectMenuInteraction)
       return;
     }
 
-    const next = session.currentQuestionIndex + 1;
+    // Use currentIndex (from findIndex) as the anchor so showIf shifts don't skew the cursor
+    const next = (currentIndex >= 0 ? currentIndex : session.currentQuestionIndex) + 1;
     if (next >= questions.length) {
       session.step = "review";
       updateSession(session);
