@@ -349,16 +349,32 @@ export const commissionQuestions: Question[] = [
     },
   },
 
-  // ── Step 11: Extra Info ───────────────────────────────────────────────────
+  // ── Step 11: Deadline ─────────────────────────────────────────────────────
+  {
+    id: "deadline",
+    prompt:
+      "## 11/12 — Deadline\n" +
+      "### ⏰ When do you need this by?\n\n" +
+      "Tell us your deadline or timeframe in plain language.\n\n" +
+      "**Examples:**\n" +
+      "• `ASAP`\n" +
+      "• `Before Christmas`\n" +
+      "• `End of next week`\n" +
+      "• `By December 25th`\n\n" +
+      "💬 *Reply with your deadline to continue.*",
+    answerType: { kind: "text", maxLength: 200 },
+  },
+
+  // ── Step 12: Extra Info ───────────────────────────────────────────────────
   {
     id: "extraInfo",
     prompt:
-      "## 11/11 — Extra Info\n" +
+      "## 12/12 — Extra Info\n" +
       "### 📝 Additional Notes\n\n" +
       "Add anything else we should know:\n\n" +
-      "• Deadlines\n" +
       "• Special requests\n" +
-      "• Extra instructions\n\n" +
+      "• Extra instructions\n" +
+      "• Any other context\n\n" +
       "**If nothing:** Type `N/A`",
     answerType: { kind: "text", optional: true, maxLength: 1000 },
   },
