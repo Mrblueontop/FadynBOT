@@ -3,17 +3,15 @@
  * ──────────────────────────────────────────────────────────────────────────────
  * AI-based price estimation for Fadyn Bot commission requests.
  *
+ * Pricing is per-item:
+ *   Buttons : $1–$2 USD / 25–100 R$ each (simple → complex)
+ *   Frames  : $3–$25 USD / 250–2000 R$ per frame (basic → advanced)
+ *   Rush    : +30% of base total when deadline is ASAP / <3 days
+ *
  * Call `calculatePrice(answers)` just before rendering the final review embed.
- * It hits the Groq API (llama-3.3-70b-versatile) with a structured prompt and
- * returns a `PriceEstimate` containing USD and Robux values plus a reasoning blurb.
+ * Returns a `PriceEstimate` with USD/Robux ranges and a reasoning blurb.
  *
  * Requires: GROQ_API_KEY in your .env / Railway environment variables.
- *
- * Integration points:
- *   1. Import and call `calculatePrice` inside `sendReviewEmbed` in flows.ts.
- *   2. Add the returned embed fields to the review EmbedBuilder.
- *   3. Update `paymentMethod` question options in questions.ts (remove Crypto,
- *      add Gift Card).
  * ──────────────────────────────────────────────────────────────────────────────
  */
 
@@ -47,13 +45,14 @@ const MODEL = "llama-3.3-70b-versatile";
 
 /**
  * Calls the Groq API to estimate a price for the commission described
- * by `answers`.  Returns a `PriceEstimate` on success, or a safe fallback
- * object if the API call fails so the bot never crashes on this step.
+ * by `answers`. Pricing is now per-item (per-frame + per-button).
+ * Returns a `PriceEstimate` on success, or a safe fallback on failure.
  */
 export async function calculatePrice(
   answers: Record<string, string>
 ): Promise<PriceEstimate> {
   const prompt = buildPricingPrompt(answers);
+  const isRush = /asap|as soon as possible/i.test(answers["deadline"] ?? "");
 
   try {
     const response = await fetch(GROQ_API_URL, {
@@ -75,7 +74,7 @@ export async function calculatePrice(
 
     if (!response.ok) {
       console.error(`[pricing] Groq API error ${response.status}:`, await response.text());
-      return fallbackEstimate();
+      return applyRush(fallbackEstimate(), isRush);
     }
 
     const data = (await response.json()) as {
@@ -83,10 +82,10 @@ export async function calculatePrice(
     };
 
     const text = data.choices[0]?.message?.content ?? "";
-    return parsePricingResponse(text);
+    return applyRush(parsePricingResponse(text), isRush);
   } catch (err) {
     console.error("[pricing] fetch error:", err);
-    return fallbackEstimate();
+    return applyRush(fallbackEstimate(), isRush);
   }
 }
 
@@ -94,32 +93,31 @@ export async function calculatePrice(
 
 const SYSTEM_PROMPT = `
 You are the pricing bot for Fadyn's Roblox UI commission service.
-Your job is to estimate a fair price for a commission using the EXACT tier
-system below. Do not invent prices outside these ranges.
+Estimate the total price by counting the actual buttons and frames the client listed,
+then applying the per-item rates below.
 
-=== OFFICIAL PRICE TIERS ===
+=== PER-ITEM PRICING ===
 
-🟢 Basic UI — $2–$5 USD / 200–500 R$
-  Simple menus, small HUDs, basic layouts. 1–2 screens, no animations,
-  minimal style, straightforward elements.
+BUTTONS — $0.50–$1 USD / 15–50 R$ each
+  $0.50 / 15 R$ : simple (plain style, no animation)
+  $1    / 50 R$ : complex (stylised, animated, or detailed)
 
-🟡 Standard UI — $5–$10 USD / 500–750 R$
-  Main menus, shop UI, inventory screens, cleaner designs. 3–5 screens,
-  polished look, may have simple tweens.
+FRAMES — $2–$10 USD / 150–800 R$ per frame
+  $2–$3  / 150–250 R$ : Basic    (1–2 elements, minimal style)
+  $3–$6  / 250–500 R$ : Standard (menus, HUDs, polished look)
+  $6–$10 / 500–800 R$ : Advanced (rich animations, complex layouts)
 
-🔴 Advanced UI — $15–$25 USD / 750–2000 R$
-  Full UI systems, polished and detailed layouts. 6+ screens OR rich
-  animations, custom/complex style, heavy interactivity.
-
-=== ADD-ONS (add to base price if applicable) ===
-- Rush order: +30% of the base price
-- Animations (AI-coded): +$1 USD / +50 R$ per animated screen
-  (only add this if the client specifically mentions wanting animations/tweens)
+=== ADD-ONS ===
+  Rush / ASAP deadline : +20% of the base total (set isRush: true)
+  Animation add-on is already factored into the per-button/frame rate — do not double-count.
 
 === RULES ===
-- NEVER quote below $2 USD or above $25 USD.
-- Roblox tax is already included — do not add extra for it.
-- If the scope is unclear, default to the lower end of the matching tier.
+- Count each button and each frame individually from "UI elements needed".
+- Total price = sum of all buttons + sum of all frames + any add-ons.
+- Minimum total: $1 USD. Maximum total: $30 USD.
+- ALWAYS default to the lower end of every range unless there is a clear reason to go higher.
+- When in doubt, go cheaper — the designer can adjust up in the ticket if needed.
+- Roblox tax is already included — do not add extra.
 - One free revision is included — do not adjust price for it.
 - Output ONLY valid JSON, no markdown fences, no extra text:
 
@@ -128,7 +126,8 @@ system below. Do not invent prices outside these ranges.
   "usdMax": <number>,
   "robuxMin": <number>,
   "robuxMax": <number>,
-  "reasoning": "<1–2 sentences: which tier and why, mention any add-ons>"
+  "reasoning": "<1–2 sentences: item count, tier used, any add-ons applied>",
+  "isRush": <boolean>
 }
 `.trim();
 
@@ -165,6 +164,29 @@ function buildPricingPrompt(answers: Record<string, string>): string {
   return lines.join("\n");
 }
 
+// ─── Rush markup ──────────────────────────────────────────────────────────────
+
+/**
+ * Applies a 20% rush surcharge to an estimate if the deadline is ASAP.
+ * This runs in code after the AI response so it's always guaranteed.
+ */
+function applyRush(estimate: PriceEstimate, isRush: boolean): PriceEstimate {
+  if (!isRush) return estimate;
+
+  const RUSH_MULTIPLIER = 1.2;
+  const usdMin   = Math.min(Math.round(estimate.raw.usdMin   * RUSH_MULTIPLIER), 30);
+  const usdMax   = Math.min(Math.round(estimate.raw.usdMax   * RUSH_MULTIPLIER), 30);
+  const robuxMin = Math.round(estimate.raw.robuxMin * RUSH_MULTIPLIER);
+  const robuxMax = Math.round(estimate.raw.robuxMax * RUSH_MULTIPLIER);
+
+  return {
+    usd:      `$${usdMin} – $${usdMax}`,
+    robux:    `${robuxMin.toLocaleString()} – ${robuxMax.toLocaleString()} R$`,
+    reasoning: estimate.reasoning + " ⚡ Rush surcharge (+20%) applied for ASAP deadline.",
+    raw:      { usdMin, usdMax, robuxMin, robuxMax },
+  };
+}
+
 // ─── Response parsing ─────────────────────────────────────────────────────────
 
 function parsePricingResponse(text: string): PriceEstimate {
@@ -176,11 +198,12 @@ function parsePricingResponse(text: string): PriceEstimate {
       robuxMin?: number;
       robuxMax?: number;
       reasoning: string;
+      isRush?: boolean;
     };
 
-    // Clamp USD to the actual price sheet limits: $2–$25
-    const usdMin = Math.min(Math.max(2, Math.round(parsed.usdMin)), 25);
-    const usdMax = Math.min(Math.max(usdMin, Math.round(parsed.usdMax)), 25);
+    // Clamp USD to per-item sheet limits: $1–$30
+    const usdMin = Math.min(Math.max(1, Math.round(parsed.usdMin)), 30);
+    const usdMax = Math.min(Math.max(usdMin, Math.round(parsed.usdMax)), 30);
 
     // Use AI-supplied Robux if present, otherwise convert
     const robuxMin = parsed.robuxMin ? Math.round(parsed.robuxMin) : usdMin * ROBUX_PER_USD;
@@ -200,15 +223,88 @@ function parsePricingResponse(text: string): PriceEstimate {
 
 function fallbackEstimate(): PriceEstimate {
   return {
-    usd: "$5 – $10",
-    robux: "500 – 750 R$",
+    usd: "$4 – $8",
+    robux: "300 – 600 R$",
     reasoning:
-      "Estimated at Standard tier. Final price will be confirmed by the designer after reviewing your request.",
-    raw: { usdMin: 5, usdMax: 10, robuxMin: 500, robuxMax: 750 },
+      "Estimated at Standard tier (per-item, lower end). Final price will be confirmed by the designer after reviewing your request.",
+    raw: { usdMin: 4, usdMax: 8, robuxMin: 300, robuxMax: 600 },
   };
 }
 
-// ─── Embed field builder (call this inside sendReviewEmbed in flows.ts) ───────
+// ─── Per-item price breakdown ─────────────────────────────────────────────────
+
+/**
+ * In-memory store: logMessageId → formatted breakdown string.
+ * Populated in submitApplication; read by the button handler.
+ */
+const breakdownStore = new Map<string, string>();
+
+export function storePriceBreakdown(messageId: string, text: string): void {
+  breakdownStore.set(messageId, text);
+}
+
+export function getPriceBreakdown(messageId: string): string | null {
+  return breakdownStore.get(messageId) ?? null;
+}
+
+/**
+ * Builds a human-readable per-item breakdown from the session answers
+ * and the already-computed PriceEstimate.
+ */
+export function buildPriceBreakdown(
+  answers: Record<string, string>,
+  estimate: PriceEstimate
+): string {
+  // Parse buttons and frames from the stored uiRequirementType answer
+  const uiRaw = answers["uiRequirementType"] ?? "";
+  const btnMatch = uiRaw.match(/Buttons Needed:\s*(.+)/i);
+  const frmMatch = uiRaw.match(/Frames Needed:\s*(.+)/i);
+
+  const buttons = btnMatch?.[1]?.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean) ?? [];
+  const frames  = frmMatch?.[1]?.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean) ?? [];
+
+  const hasAnimation = answers["animation"] === "Yes";
+  const isRush = /asap|as soon as possible/i.test(answers["deadline"] ?? "");
+  const overallStyle = answers["overallStyle"] ?? "";
+  const isAdvanced = /sci-fi|fantasy|custom/i.test(overallStyle);
+
+  const lines: string[] = [];
+
+  if (buttons.length > 0) {
+    lines.push("**🔘 Buttons**");
+    for (const btn of buttons) {
+      const usd    = hasAnimation ? "$1.00" : "$0.50";
+      const robux  = hasAnimation ? "50 R$" : "15 R$";
+      lines.push(`› \`${btn}\` — ${usd} / ${robux}`);
+    }
+    lines.push("");
+  }
+
+  if (frames.length > 0) {
+    lines.push("**🖼️ Frames**");
+    for (const frm of frames) {
+      const usd   = isAdvanced ? "$6–$10" : "$2–$6";
+      const robux = isAdvanced ? "500–800 R$" : "150–500 R$";
+      lines.push(`› \`${frm}\` — ${usd} / ${robux}`);
+    }
+    lines.push("");
+  }
+
+  if (isRush) {
+    lines.push("**⚡ Rush (ASAP)** — +20% of base");
+    lines.push("");
+  }
+
+  if (hasAnimation) {
+    lines.push("**✨ Animation** — included in per-button rate");
+    lines.push("");
+  }
+
+  lines.push(`**💰 Total: ${estimate.usd} USD** *(≈ ${estimate.robux})*`);
+  lines.push(`\n*${estimate.reasoning}*`);
+
+  return lines.join("\n");
+}
 
 /**
  * Returns two EmbedBuilder-compatible field objects to append to your review
@@ -242,7 +338,7 @@ export function buildPriceEmbedFields(
 
   return [
     {
-      name: "💰 Estimated Price",
+      name: "💰 Total Price",
       value: priceDisplay,
       inline: false,
     },
