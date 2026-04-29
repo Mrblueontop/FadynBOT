@@ -395,6 +395,19 @@ async function advanceOrReview(interaction: ButtonInteraction, session: ReturnTy
     return;
   }
 
+  // Re-anchor the index to the last question that has an answer in the
+  // current filtered list, so that newly-visible conditional questions
+  // (showIf) don't cause the cursor to skip or repeat a step.
+  const answeredIds = new Set(Object.keys(session.answers));
+  let anchoredIndex = session.currentQuestionIndex;
+  for (let i = questions.length - 1; i >= 0; i--) {
+    if (answeredIds.has(questions[i]!.id)) {
+      anchoredIndex = i;
+      break;
+    }
+  }
+  session.currentQuestionIndex = anchoredIndex;
+
   const next = session.currentQuestionIndex + 1;
   if (next >= questions.length) {
     session.step = "review";
