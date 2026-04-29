@@ -226,14 +226,17 @@ export function buildPriceEmbedFields(
 ): { name: string; value: string; inline?: boolean }[] {
   const method = answers["paymentMethod"] ?? "";
 
-  // Build the price display line based on preferred payment
+  // Build the price display line based on preferred payment(s)
   let priceDisplay: string;
-  if (method === "Robux") {
+  if (method.includes("Robux") && !method.includes("PayPal") && !method.includes("Gift Card")) {
     priceDisplay = `**${estimate.robux}**\n*(≈ ${estimate.usd} USD)*`;
-  } else if (method === "Gift Card") {
+  } else if (method.includes("Gift Card") && !method.includes("PayPal") && !method.includes("Robux")) {
     priceDisplay = `**${estimate.usd} (Gift Card)**\n*(≈ ${estimate.robux})*`;
+  } else if (method.includes("Robux") && !method.includes("PayPal")) {
+    // Gift Card + Robux
+    priceDisplay = `**${estimate.usd} (Gift Card)** or **${estimate.robux}**`;
   } else {
-    // USD / PayPal / default
+    // PayPal present, or mixed — show USD as primary
     priceDisplay = `**${estimate.usd} USD**\n*(≈ ${estimate.robux})*`;
   }
 
